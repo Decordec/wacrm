@@ -187,6 +187,17 @@ export async function GET(request: Request) {
       )
     }
 
+    // Deployment-wide token (META_WEBHOOK_VERIFY_TOKEN) — lets the Meta
+    // App's webhook be set up before any number is connected, which is
+    // the order Embedded Signup needs (numbers arrive through the flow).
+    const envToken = process.env.META_WEBHOOK_VERIFY_TOKEN?.trim()
+    if (envToken && verifyTokenMatches(envToken, verifyToken)) {
+      return new Response(challenge, {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      })
+    }
+
     // Fetch all whatsapp configs to check verify tokens
     const { data: configs, error: configError } = await supabaseAdmin()
       .from('whatsapp_config')

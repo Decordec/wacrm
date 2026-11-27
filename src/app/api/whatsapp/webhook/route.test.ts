@@ -264,6 +264,7 @@ vi.mock('@/lib/contacts/dedupe', () => ({
 
 vi.mock('@/lib/whatsapp/webhook-signature', () => ({
   verifyMetaWebhookSignature: () => true,
+  verifyTokenMatches: (a: string, b: string) => a === b,
 }))
 vi.mock('@/lib/whatsapp/template-webhook', () => ({
   isTemplateWebhookField: (field: string) =>
@@ -1248,5 +1249,24 @@ describe('inbound webhook: one conversation per connected number (migration 061)
     expect(h.state.conversationNumberFilters).toEqual([
       { column: 'whatsapp_config_id', value: 'cfg-1' },
     ])
+  })
+})
+
+describe('GET handshake with META_WEBHOOK_VERIFY_TOKEN', () => {
+  it('accepts the deployment-wide verify token before any number exists', async () => {
+    const prev = process.env.META_WEBHOOK_VERIFY_TOKEN
+    process.env.META_WEBHOOK_VERIFY_TOKEN = 'env-token-123'
+    try {
+      const { GET } = await import('./route')
+      const res = await GET(
+        new Request(
+          'https://crm.test/api/whatsapp/webhook?hub.mode=subscribe&hub.challenge=abc&hub.verify_token=env-token-123',
+        ),
+      )
+      expect(res.status).toBe(200)
+      expect(await res.text()).toBe('abc')
+    } finally {
+      process.env.META_WEBHOOK_VERIFY_TOKEN = prev
+    }
   })
 })
