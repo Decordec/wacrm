@@ -83,6 +83,8 @@ export function ConnectWhatsAppButton({ onConnected }: { onConnected: () => void
   const [pipelineId, setPipelineId] = useState<string>(NO_PIPELINE);
   const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
+  const [sdk, setSdk] = useState<FbSdk | null>(null);
+  const [sdkError, setSdkError] = useState<string | null>(null);
   // Filled by Meta's postMessage when the popup finishes.
   const session = useRef<{ wabaId?: string; phoneNumberId?: string }>({});
 
@@ -119,15 +121,32 @@ export function ConnectWhatsAppButton({ onConnected }: { onConnected: () => void
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
+  // Load the Facebook SDK as soon as the dialog opens, so the click on
+  // "Continue with Facebook" can open Meta's window synchronously. Opening
+  // it after an await loses the user gesture and Chrome blocks the popup.
+  useEffect(() => {
+    if (!open || sdk || !config?.appId) return;
+    let alive = true;
+    loadFbSdk(config.appId, config.graphVersion)
+      .then((fb) => alive && setSdk(fb))
+      .catch((e) => alive && setSdkError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      alive = false;
+    };
+  }, [open, sdk, config?.appId, config?.graphVersion]);
+
   if (!config?.enabled || !config.appId || !config.configId) return null;
 
-  async function start() {
+  function start() {
     if (!config?.appId || !config.configId) return;
+    if (!sdk) {
+      toast.error(sdkError ?? 'Facebook is still loading. Try again in a moment.');
+      return;
+    }
     setBusy(true);
     session.current = {};
     try {
-      const FB = await loadFbSdk(config.appId, config.graphVersion);
-      FB.login(
+      sdk.login(
         (response) => {
           const code = response.authResponse?.code;
           if (!code) {
@@ -199,7 +218,7 @@ export function ConnectWhatsAppButton({ onConnected }: { onConnected: () => void
         <Smartphone className="size-4" />
         Connect WhatsApp (keep on phone)
       </Button>
-      <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
+      <Dialog open={open} onOpenChange={(o) => { if (!o) setBusy(false); setOpen(o); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Connect a WhatsApp Business app number</DialogTitle>
@@ -242,17 +261,24 @@ export function ConnectWhatsAppButton({ onConnected }: { onConnected: () => void
                 New conversations on this number open a lead in this pipeline.
               </p>
             </div>
+            {busy && (
+              <p className="text-xs text-muted-foreground">
+                A Facebook window should be open. If you don&apos;t see it, check for a blocked-popup
+                icon in the address bar, allow popups for this site, then press Cancel and try again.
+              </p>
+            )}
+            {sdkError && <p className="text-xs text-destructive">{sdkError}</p>}
             <p className="text-xs text-muted-foreground">
               Before you start: if the number is linked to another WhatsApp partner, disconnect it in
               the WhatsApp Business app first (Settings → Account → Business Platform).
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
+            <Button variant="outline" onClick={() => { setBusy(false); setOpen(false); }}>
               Cancel
             </Button>
-            <Button onClick={start} disabled={busy}>
-              {busy && <Loader2 className="size-4 animate-spin" />}
+            <Button onClick={start} disabled={busy || (!sdk && !sdkError)}>
+              {(busy || (!sdk && !sdkError)) && <Loader2 className="size-4 animate-spin" />}
               Continue with Facebook
             </Button>
           </DialogFooter>
