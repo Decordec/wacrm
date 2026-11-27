@@ -24,6 +24,36 @@ export interface AudienceConfig {
   customField?: CustomFieldFilter;
   csvContacts?: CsvAudienceRow[];
   excludeTagIds?: string[];
+  /**
+   * Brand scoping: only contacts that have a conversation on this
+   * WhatsApp number (Decordec, RMC, Saze Home …). Null/undefined = no
+   * restriction. Ignored for CSV uploads, which are an explicit list.
+   */
+  brandConfigId?: string | null;
+}
+
+export function fetchBrandContactIds(
+  db: SupabaseClient,
+  whatsappConfigId: string,
+): Promise<Set<string>> {
+  return withContext('brand contacts', async () => {
+    const rows = await fetchAllPages<{ contact_id: string }>((from, to) =>
+      db
+        .from('conversations')
+        .select('contact_id')
+        .eq('whatsapp_config_id', whatsappConfigId)
+        .order('id')
+        .range(from, to),
+    );
+    return new Set(rows.map((row) => row.contact_id).filter(Boolean));
+  });
+}
+
+function intersect(a: Set<string>, b: Set<string> | null): Set<string> {
+  if (!b) return a;
+  const out = new Set<string>();
+  for (const id of a) if (b.has(id)) out.add(id);
+  return out;
 }
 
 async function withContext<T>(label: string, run: () => Promise<T>): Promise<T> {
@@ -130,16 +160,24 @@ export async function resolveAudienceContacts(
   const excluded = await fetchExcludedIds(db, audience);
   const keep = (contact: Contact) => !excluded.has(contact.id);
 
-  if (audience.type === 'all') {
-    return (await fetchAllContacts(db)).filter(keep);
-  }
   if (audience.type === 'csv') {
     if (!audience.csvContacts) return [];
     return (await resolveCsv(audience.csvContacts)).filter(keep);
   }
 
-  const ids = await fetchAudienceContactIds(db, audience);
-  if (!ids) return [];
+  const brand = audience.brandConfigId
+    ? await fetchBrandContactIds(db, audience.brandConfigId)
+    : null;
+
+  if (audience.type === 'all') {
+    if (!brand) return (await fetchAllContacts(db)).filter(keep);
+    const wantedBrand = [...brand].filter((id) => !excluded.has(id));
+    return wantedBrand.length ? fetchContactsByIds(db, wantedBrand) : [];
+  }
+
+  const rawIds = await fetchAudienceContactIds(db, audience);
+  if (!rawIds) return [];
+  const ids = intersect(rawIds, brand);
   const wanted = [...ids].filter((id) => !excluded.has(id));
   if (wanted.length === 0) return [];
   return fetchContactsByIds(db, wanted);
@@ -153,6 +191,17 @@ export async function countAudience(
     return audience.csvContacts && audience.csvContacts.length > 0
       ? audience.csvContacts.length
       : null;
+  }
+
+  const brand = audience.brandConfigId
+    ? await fetchBrandContactIds(db, audience.brandConfigId)
+    : null;
+
+  if (audience.type === 'all' && brand) {
+    const excluded = await fetchExcludedIds(db, audience);
+    let size = 0;
+    for (const id of brand) if (!excluded.has(id)) size++;
+    return size;
   }
 
   if (audience.type === 'all') {
@@ -169,8 +218,9 @@ export async function countAudience(
     return null;
   }
 
-  const ids = await fetchAudienceContactIds(db, audience);
-  if (!ids) return null;
+  const rawIds = await fetchAudienceContactIds(db, audience);
+  if (!rawIds) return null;
+  const ids = intersect(rawIds, brand);
   const excluded = await fetchExcludedIds(db, audience);
   let size = 0;
   for (const id of ids) if (!excluded.has(id)) size++;

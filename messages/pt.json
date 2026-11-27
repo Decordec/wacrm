@@ -1028,7 +1028,9 @@
         "audienceSummary": "Resumo do público",
         "calculating": "Calculando…",
         "estimatedRecipients": "destinatários estimados",
-        "selectTypeForEstimate": "Selecione um tipo de público para ver a estimativa."
+        "selectTypeForEstimate": "Selecione um tipo de público para ver a estimativa.",
+        "brandOnly": "Only {brand} contacts",
+        "brandOnlyHint": "Send only to people who have chatted with this brand's WhatsApp number. Untick to include every contact."
       },
       "personalize": {
         "title": "Personalizar variáveis",

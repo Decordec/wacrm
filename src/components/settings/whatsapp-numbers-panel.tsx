@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { Plus, Star, Phone } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
+import { ConnectWhatsAppButton } from './connect-whatsapp-button';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -114,14 +115,17 @@ export function WhatsAppNumbersPanel({
           <CardDescription className="text-muted-foreground">{t('description')}</CardDescription>
         </div>
         {canEdit && (
-          <Button
-            size="sm"
-            variant={selectedId === null ? 'default' : 'outline'}
-            onClick={onAddNew}
-          >
-            <Plus className="size-4" />
-            {t('add')}
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <ConnectWhatsAppButton onConnected={onChanged} />
+            <Button
+              size="sm"
+              variant={selectedId === null ? 'default' : 'outline'}
+              onClick={onAddNew}
+            >
+              <Plus className="size-4" />
+              {t('add')}
+            </Button>
+          </div>
         )}
       </CardHeader>
       <CardContent className="space-y-3">

@@ -40,7 +40,10 @@ export default function NewBroadcastPage() {
     };
     csvContacts?: { phone: string; name?: string }[];
     excludeTagIds?: string[];
+    brandConfigId?: string | null;
   }>({ type: 'all' });
+  // Sending number (brand) details, set when the account has several.
+  const [brandNumber, setBrandNumber] = useState<{ id: string; label: string } | null>(null);
   const [variables, setVariables] = useState<
     Record<string, { type: 'static' | 'field' | 'custom_field'; value: string }>
   >({});
@@ -61,6 +64,7 @@ export default function NewBroadcastPage() {
           customField: audience.customField,
           csvContacts: audience.csvContacts,
           excludeTagIds: audience.excludeTagIds,
+          brandConfigId: audience.brandConfigId ?? null,
         },
         variables,
         headerMediaUrl,
@@ -148,6 +152,19 @@ export default function NewBroadcastPage() {
       {/* Which number sends it — hidden for single-number accounts */}
       <NumberPicker
         value={whatsappConfigId}
+        onNumbersLoaded={(list) => {
+          // Several brands → audiences default to the chosen brand's contacts.
+          if (list.length > 1 && list[0]) {
+            setBrandNumber({ id: list[0].id, label: list[0].label });
+            setAudience((a) => ({ ...a, brandConfigId: list[0].id }));
+          }
+        }}
+        onSelectedDetails={(n) => {
+          setBrandNumber((prev) => (prev ? n : prev));
+          setAudience((a) =>
+            a.brandConfigId ? { ...a, brandConfigId: n.id } : a,
+          );
+        }}
         onChange={(id) => {
           // Templates are per WABA: a template picked for another
           // number may not exist on this one.
@@ -216,6 +233,7 @@ export default function NewBroadcastPage() {
           )}
           {currentStep === 1 && (
             <Step2SelectAudience
+              brandNumber={brandNumber}
               audience={audience}
               onUpdate={setAudience}
               onNext={() => setCurrentStep(2)}

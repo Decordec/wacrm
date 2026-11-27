@@ -177,6 +177,37 @@ export function ConversationList({
     return m;
   }, [numbers]);
   const showNumbers = numbers.length > 1;
+  // Unread conversations per brand tab ("all" = every number).
+  const unreadByNumber = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of conversations) {
+      if (!c.unread_count) continue;
+      m.set("all", (m.get("all") ?? 0) + 1);
+      if (c.whatsapp_config_id) m.set(c.whatsapp_config_id, (m.get(c.whatsapp_config_id) ?? 0) + 1);
+    }
+    return m;
+  }, [conversations]);
+  // Remember the last brand inbox on this device.
+  const selectNumberFilter = (id: string) => {
+    setNumberFilter(id);
+    try {
+      localStorage.setItem("wacrm.inbox.number", id);
+    } catch {
+      // storage unavailable (private mode) — selection still applies
+    }
+  };
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("wacrm.inbox.number");
+      if (saved && (saved === "all" || numbers.some((n) => n.id === saved))) {
+        // Restoring a persisted UI choice once the numbers are known.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setNumberFilter(saved);
+      }
+    } catch {
+      // ignore
+    }
+  }, [numbers]);
 
   // Company options are derived from the loaded conversations — there's no
   // separate companies table, and only companies with a live conversation
@@ -260,6 +291,44 @@ export function ConversationList({
     // the single pane showing; fixed 320px on desktop where it shares the
     // row with the thread + contact sidebar.
     <div className="flex h-full w-full flex-col border-r border-border bg-card lg:w-80">
+      {/* Brand inboxes — one tab per WhatsApp number (Decordec, RMC,
+          Saze Home …) with its unread count. Only shown when the account
+          runs several numbers. */}
+      {showNumbers && (
+        <div
+          role="tablist"
+          aria-label={tNumbers("numberFilter")}
+          className="flex gap-1 overflow-x-auto border-b border-border px-2 pt-2"
+        >
+          {[{ id: "all", label: tNumbers("allNumbers") }, ...numbers.map((n) => ({ id: n.id, label: n.label || n.phone_number_id }))].map((tab) => {
+            const active = numberFilter === tab.id;
+            const unread = unreadByNumber.get(tab.id) ?? 0;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => selectNumberFilter(tab.id)}
+                className={cn(
+                  "-mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 pb-2 pt-1 text-sm transition-colors",
+                  active
+                    ? "border-primary font-medium text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {tab.label}
+                {unread > 0 && (
+                  <span className="rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-4 text-primary-foreground">
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Search + Filter */}
       <div className="space-y-2 border-b border-border p-3">
         <div className="relative">
@@ -298,42 +367,6 @@ export function ConversationList({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-
-          {showNumbers && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                className={cn(
-                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                  numberFilter !== "all"
-                    ? "text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                aria-label={tNumbers("numberFilter")}
-              >
-                {numberFilter === "all"
-                  ? tNumbers("allNumbers")
-                  : numberLabels.get(numberFilter) ?? tNumbers("numberFilter")}
-                <ChevronDown className="h-3 w-3" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="border-border bg-popover">
-                <DropdownMenuItem
-                  onClick={() => setNumberFilter("all")}
-                  className={cn("text-sm", numberFilter === "all" ? "text-primary" : "text-popover-foreground")}
-                >
-                  {tNumbers("allNumbers")}
-                </DropdownMenuItem>
-                {numbers.map((n) => (
-                  <DropdownMenuItem
-                    key={n.id}
-                    onClick={() => setNumberFilter(n.id)}
-                    className={cn("text-sm", numberFilter === n.id ? "text-primary" : "text-popover-foreground")}
-                  >
-                    {n.label || n.phone_number_id}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
 
           {tags.length > 0 && (
             <DropdownMenu>

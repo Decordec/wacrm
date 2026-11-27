@@ -1028,7 +1028,9 @@
         "audienceSummary": "대상 요약",
         "calculating": "계산 중…",
         "estimatedRecipients": "예상 수신자",
-        "selectTypeForEstimate": "예상치를 보려면 대상 유형을 선택하세요."
+        "selectTypeForEstimate": "예상치를 보려면 대상 유형을 선택하세요.",
+        "brandOnly": "Only {brand} contacts",
+        "brandOnlyHint": "Send only to people who have chatted with this brand's WhatsApp number. Untick to include every contact."
       },
       "personalize": {
         "title": "변수 개인화",

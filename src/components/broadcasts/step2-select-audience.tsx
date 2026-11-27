@@ -35,9 +35,12 @@ interface AudienceConfig {
   customField?: CustomFieldFilter;
   csvContacts?: { phone: string; name?: string }[];
   excludeTagIds?: string[];
+  brandConfigId?: string | null;
 }
 
 interface Step2Props {
+  /** Sending number when the account has several (one per brand). */
+  brandNumber?: { id: string; label: string } | null;
   audience: AudienceConfig;
   onUpdate: (audience: AudienceConfig) => void;
   onNext: () => void;
@@ -45,6 +48,7 @@ interface Step2Props {
 }
 
 export function Step2SelectAudience({
+  brandNumber,
   audience,
   onUpdate,
   onNext,
@@ -153,6 +157,7 @@ export function Step2SelectAudience({
         customField: audience.customField,
         csvContacts: audience.csvContacts,
         excludeTagIds: audience.excludeTagIds,
+        brandConfigId: audience.brandConfigId,
       });
     } catch {
       count = null;
@@ -166,6 +171,7 @@ export function Step2SelectAudience({
     audience.customField,
     audience.csvContacts,
     audience.excludeTagIds,
+    audience.brandConfigId,
   ]);
 
   useEffect(() => {
@@ -248,6 +254,27 @@ export function Step2SelectAudience({
           {t('selectAudience.subtitle')}
         </p>
       </div>
+
+      {brandNumber && audience.type !== 'csv' && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 accent-[var(--primary)]"
+            checked={audience.brandConfigId === brandNumber.id}
+            onChange={(e) =>
+              onUpdate({ ...audience, brandConfigId: e.target.checked ? brandNumber.id : null })
+            }
+          />
+          <span>
+            <span className="font-medium text-foreground">
+              {t('selectAudience.brandOnly', { brand: brandNumber.label })}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {t('selectAudience.brandOnlyHint')}
+            </span>
+          </span>
+        </label>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {audienceOptions.map((option: { type: AudienceType; label: string; description: string; icon: typeof Users }) => {

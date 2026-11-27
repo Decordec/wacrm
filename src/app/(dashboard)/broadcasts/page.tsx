@@ -66,6 +66,8 @@ export default function BroadcastsPage() {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // whatsapp_config id -> brand label, shown when several numbers exist.
+  const [brandLabels, setBrandLabels] = useState<Record<string, string>>({});
 
   // Used to kick off polling only while something is actively sending.
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -80,6 +82,19 @@ export default function BroadcastsPage() {
 
       if (fetchError) throw fetchError;
       setBroadcasts(data ?? []);
+      const { data: nums } = await supabase
+        .from('whatsapp_config')
+        .select('id, label, phone_number_id');
+      if (nums && nums.length > 1) {
+        setBrandLabels(
+          Object.fromEntries(
+            (nums as { id: string; label: string | null; phone_number_id: string }[]).map((n) => [
+              n.id,
+              n.label || n.phone_number_id,
+            ]),
+          ),
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : t('errorLoad'));
     } finally {
@@ -243,6 +258,11 @@ export default function BroadcastsPage() {
                   >
                     <TableCell className="font-medium text-foreground">
                       {broadcast.name}
+                      {broadcast.whatsapp_config_id && brandLabels[broadcast.whatsapp_config_id] && (
+                        <span className="ml-2 rounded-md border border-border px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+                          {brandLabels[broadcast.whatsapp_config_id]}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="hidden text-muted-foreground md:table-cell">
                       {broadcast.template_name}

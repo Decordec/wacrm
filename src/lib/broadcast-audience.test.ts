@@ -380,3 +380,42 @@ describe('countAudience', () => {
     expect(await countAudience(db, { type: 'csv' })).toBeNull();
   });
 });
+
+describe('brand-scoped audiences', () => {
+  const people = contacts(6);
+  // c0-c2 chatted with Decordec, c2-c4 with RMC; c5 never chatted.
+  const conversations: Row[] = [
+    { id: 'v0', contact_id: people[0].id, whatsapp_config_id: 'dec' },
+    { id: 'v1', contact_id: people[1].id, whatsapp_config_id: 'dec' },
+    { id: 'v2', contact_id: people[2].id, whatsapp_config_id: 'dec' },
+    { id: 'v3', contact_id: people[2].id, whatsapp_config_id: 'rmc' },
+    { id: 'v4', contact_id: people[3].id, whatsapp_config_id: 'rmc' },
+    { id: 'v5', contact_id: people[4].id, whatsapp_config_id: 'rmc' },
+  ];
+  const tables = {
+    contacts: people,
+    conversations,
+    contact_tags: tagRows([people[0], people[3]], 'vip', 't'),
+  };
+
+  it('limits "all contacts" to the brand', async () => {
+    const { db } = cappedPostgrest(tables);
+    const audience: AudienceConfig = { type: 'all', brandConfigId: 'rmc' };
+    expect(await countAudience(db, audience)).toBe(3);
+    const ids = (await resolveAudienceContacts(db, audience, noCsv)).map((c) => c.id).sort();
+    expect(ids).toEqual([people[2].id, people[3].id, people[4].id].sort());
+  });
+
+  it('intersects tag audiences with the brand', async () => {
+    const { db } = cappedPostgrest(tables);
+    const audience: AudienceConfig = { type: 'tags', tagIds: ['vip'], brandConfigId: 'dec' };
+    expect(await countAudience(db, audience)).toBe(1);
+    const ids = (await resolveAudienceContacts(db, audience, noCsv)).map((c) => c.id);
+    expect(ids).toEqual([people[0].id]);
+  });
+
+  it('keeps every contact when no brand is set', async () => {
+    const { db } = cappedPostgrest(tables);
+    expect(await countAudience(db, { type: 'all' })).toBe(6);
+  });
+});

@@ -32,6 +32,17 @@ import {
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
 import { applyMessageStatus } from '@/lib/whatsapp/message-status-sync'
+import {
+  HISTORY_DECLINED_CODE,
+  isCoexistenceField,
+  isFromCustomer,
+  mapHistoryStatus,
+  previewFor,
+  stateSyncName,
+  type CoexMessage,
+  type HistoryChunk,
+  type StateSyncItem,
+} from '@/lib/whatsapp/coexistence'
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -152,6 +163,10 @@ interface WhatsAppWebhookEntry {
          */
         errors?: MetaError[]
       }>
+      // WhatsApp Business app coexistence fields (see lib/whatsapp/coexistence).
+      message_echoes?: CoexMessage[]
+      history?: HistoryChunk[]
+      state_sync?: StateSyncItem[]
     }
     field: string
   }>
@@ -343,6 +358,14 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       }
 
       const value = change.value
+
+      // Phone-side events of a number that stays on the WhatsApp
+      // Business app (coexistence): imported history, the phone's
+      // contacts, and messages sent from the phone.
+      if (isCoexistenceField(change.field)) {
+        await handleCoexistenceChange(change.field, value)
+        continue
+      }
 
       // Handle status updates
       if (value.statuses) {
@@ -594,6 +617,208 @@ async function handleReaction(
   if (upsertError) {
     console.error('[webhook] reaction upsert failed:', upsertError.message)
   }
+}
+
+type WebhookValue = WhatsAppWebhookEntry['changes'][number]['value']
+
+/**
+ * history / smb_app_state_sync / smb_message_echoes for a coexistence
+ * number. Imports into the same contacts / conversations / messages the
+ * live inbox uses, idempotently (message_id unique per conversation), and
+ * WITHOUT firing automations, flows, AI replies or unread bumps — these
+ * are past or business-sent messages, not new customer input.
+ */
+async function handleCoexistenceChange(field: string, value: WebhookValue) {
+  const phoneNumberId = value.metadata?.phone_number_id
+  if (!phoneNumberId) return
+  const { data: rows, error } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('*')
+    .eq('phone_number_id', phoneNumberId)
+  if (error || !rows || rows.length !== 1) {
+    console.error(
+      `[coexistence] ${field}: ${rows?.length ?? 0} configs for phone_number_id ${phoneNumberId}; skipped`,
+      error?.message ?? ''
+    )
+    return
+  }
+  const config = rows[0]
+  const accessToken = decrypt(config.access_token)
+  const accountId: string = config.account_id
+  const ownerId: string = config.user_id
+
+  if (field === 'smb_app_state_sync') {
+    let imported = 0
+    for (const item of value.state_sync ?? []) {
+      if (item.type !== 'contact' || item.action === 'remove' || !item.contact) continue
+      const identity: WaIdentity = {
+        phone: normalizePhone(item.contact.phone_number ?? ''),
+        waUserId: item.contact.user_id ?? null,
+        waParentUserId: item.contact.parent_user_id ?? null,
+        waUsername: item.contact.username ?? null,
+        name: stateSyncName(item),
+      }
+      if (!hasUsableIdentity(identity)) continue
+      if (await findOrCreateContact(accountId, ownerId, identity)) imported++
+    }
+    console.info(`[coexistence] contacts synced for ${phoneNumberId}: ${imported}`)
+    return
+  }
+
+  if (field === 'smb_message_echoes') {
+    const contactInfo = value.contacts?.[0]
+    for (const echo of value.message_echoes ?? []) {
+      const identity: WaIdentity = {
+        phone: normalizePhone(echo.to ?? contactInfo?.wa_id ?? ''),
+        waUserId: echo.to_user_id ?? contactInfo?.user_id ?? null,
+        waParentUserId: echo.to_parent_user_id ?? contactInfo?.parent_user_id ?? null,
+        waUsername: contactInfo?.profile?.username ?? null,
+        name: contactInfo?.profile?.name?.trim() ?? '',
+      }
+      await importCoexMessage({
+        accountId,
+        ownerId,
+        configId: config.id,
+        accessToken,
+        identity,
+        message: echo,
+        fromCustomer: false,
+        status: 'sent',
+        mirrorMedia: config.mirror_inbound_media !== false,
+      })
+    }
+    return
+  }
+
+  // history
+  for (const chunk of value.history ?? []) {
+    for (const err of chunk.errors ?? []) {
+      console.warn(
+        err.code === HISTORY_DECLINED_CODE
+          ? `[coexistence] business declined chat history sharing for ${phoneNumberId}`
+          : `[coexistence] history error for ${phoneNumberId}: ${err.code} ${err.title ?? ''}`
+      )
+    }
+    let count = 0
+    for (const thread of chunk.threads ?? []) {
+      const identity: WaIdentity = {
+        phone: normalizePhone(thread.context?.wa_id ?? thread.id ?? ''),
+        waUserId: thread.context?.user_id ?? null,
+        waParentUserId: thread.context?.parent_user_id ?? null,
+        waUsername: thread.context?.username ?? null,
+        name: '',
+      }
+      for (const message of thread.messages ?? []) {
+        const fromCustomer = isFromCustomer(message, thread)
+        const ok = await importCoexMessage({
+          accountId,
+          ownerId,
+          configId: config.id,
+          accessToken,
+          identity,
+          message,
+          fromCustomer,
+          status: mapHistoryStatus(message.history_context?.status, fromCustomer),
+          // History media ids expire after ~14 days and a full import
+          // can carry thousands; keep the proxy URL instead of copying.
+          mirrorMedia: false,
+          isHistory: true,
+        })
+        if (ok) count++
+      }
+    }
+    console.info(
+      `[coexistence] history chunk ${chunk.metadata?.chunk_order ?? '?'} (progress ${chunk.metadata?.progress ?? '?'}) for ${phoneNumberId}: ${count} messages`
+    )
+  }
+}
+
+async function importCoexMessage(args: {
+  accountId: string
+  ownerId: string
+  configId: string
+  accessToken: string
+  identity: WaIdentity
+  message: CoexMessage
+  fromCustomer: boolean
+  status: string
+  mirrorMedia: boolean
+  isHistory?: boolean
+}): Promise<boolean> {
+  const { accountId, ownerId, configId, accessToken, identity, message } = args
+  if (!hasUsableIdentity(identity) || !message.id) return false
+
+  const contactOutcome = await findOrCreateContact(accountId, ownerId, identity)
+  if (!contactOutcome) return false
+  const convResult = await findOrCreateConversation(
+    accountId,
+    ownerId,
+    contactOutcome.contact.id,
+    configId
+  )
+  if (!convResult) return false
+  const conversation = convResult.conversation
+
+  if (message.type === 'reaction') return false
+
+  const parsed = await parseMessageContent(
+    message as unknown as WhatsAppMessage,
+    accessToken,
+    args.mirrorMedia ? { accountId } : null
+  )
+  const ALLOWED = new Set([
+    'text', 'image', 'document', 'audio', 'video', 'location', 'template', 'interactive',
+  ])
+  const contentType = ALLOWED.has(message.type)
+    ? message.type
+    : message.type === 'sticker'
+      ? 'image'
+      : message.type === 'button'
+        ? 'interactive'
+        : 'text'
+  const createdAt = metaTimestampToIso(String(message.timestamp)) ?? new Date().toISOString()
+
+  const { data: inserted, error } = await supabaseAdmin()
+    .from('messages')
+    .upsert(
+      {
+        conversation_id: conversation.id,
+        sender_type: args.fromCustomer ? 'customer' : 'agent',
+        content_type: contentType,
+        content_text: parsed.contentText,
+        media_url: parsed.mediaUrl,
+        media_type: parsed.mediaType,
+        message_id: message.id,
+        status: args.status,
+        created_at: createdAt,
+        interactive_reply_id: parsed.interactiveReplyId,
+        error_code: parsed.errorCode,
+        error_title: parsed.errorTitle,
+        error_details: parsed.errorDetails,
+      },
+      { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
+    )
+    .select('id')
+  if (error) {
+    console.error('[coexistence] message import failed:', message.id, error.message)
+    return false
+  }
+  if (!inserted || inserted.length === 0) return false // already imported
+
+  // Keep the inbox preview current — only ever move it forward, since
+  // history chunks arrive out of chronological order.
+  const lastAt = conversation.last_message_at as string | null | undefined
+  if (!lastAt || new Date(lastAt) < new Date(createdAt)) {
+    await supabaseAdmin()
+      .from('conversations')
+      .update({
+        last_message_text: previewFor(message.type, parsed.contentText),
+        last_message_at: createdAt,
+      })
+      .eq('id', conversation.id)
+  }
+
+  return true
 }
 
 async function processMessage(

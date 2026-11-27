@@ -26,9 +26,15 @@ interface NumberOption {
 export function NumberPicker({
   value,
   onChange,
+  onNumbersLoaded,
+  onSelectedDetails,
 }: {
   value: string | null;
   onChange: (id: string) => void;
+  /** All numbers, default first (labels resolved), once loaded. */
+  onNumbersLoaded?: (numbers: { id: string; label: string }[]) => void;
+  /** Fires with id + label whenever the user picks a number. */
+  onSelectedDetails?: (n: { id: string; label: string }) => void;
 }) {
   const t = useTranslations('MultiNumber');
   const [numbers, setNumbers] = useState<NumberOption[]>([]);
@@ -43,6 +49,9 @@ export function NumberPicker({
         .order('created_at', { ascending: true });
       if (cancelled || !data) return;
       setNumbers(data as NumberOption[]);
+      onNumbersLoaded?.(
+        (data as NumberOption[]).map((n) => ({ id: n.id, label: n.label || n.phone_number_id })),
+      );
       // Preselect the default number so the value is never ambiguous.
       if (!value && data.length > 0) onChange(data[0].id);
     })();
@@ -59,7 +68,16 @@ export function NumberPicker({
   return (
     <div className="space-y-1.5">
       <Label className="text-sm text-muted-foreground">{t('fromNumber')}</Label>
-      <Select value={value ?? ''} onValueChange={(v) => v && onChange(String(v))}>
+      <Select
+        value={value ?? ''}
+        onValueChange={(v) => {
+          if (!v) return;
+          const id = String(v);
+          onChange(id);
+          const n = numbers.find((x) => x.id === id);
+          if (n) onSelectedDetails?.({ id, label: n.label || n.phone_number_id });
+        }}
+      >
         <SelectTrigger className="w-full sm:w-72" aria-label={t('fromNumber')}>
           <SelectValue>{current ? current.label || current.phone_number_id : t('fromNumber')}</SelectValue>
         </SelectTrigger>

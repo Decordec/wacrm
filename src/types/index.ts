@@ -431,6 +431,8 @@ export type RecipientStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'repli
 export interface Broadcast {
   id: string;
   user_id: string;
+  /** Sending number / brand (migration 061). */
+  whatsapp_config_id?: string | null;
   name: string;
   template_name: string;
   template_language: string;
