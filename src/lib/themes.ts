@@ -43,9 +43,13 @@ export const MODES = ["light", "dark"] as const;
 
 export type Mode = (typeof MODES)[number];
 
-export const DEFAULT_MODE: Mode = "dark";
+// Light by default: easier to read for day-long CRM work. Users can
+// still switch to dark from the header toggle.
+export const DEFAULT_MODE: Mode = "light";
 
-export const MODE_STORAGE_KEY = "wacrm.mode";
+// Bumped (".v2") when the default moved to light, so browsers that
+// only ever had the old dark default start in light once.
+export const MODE_STORAGE_KEY = "wacrm.mode.v2";
 
 export function isMode(value: unknown): value is Mode {
   return (

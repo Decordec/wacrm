@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is([data-mode="dark"] *));
 
 @theme inline {
   --color-background: var(--background);
@@ -125,36 +125,141 @@ html[data-mode="dark"] {
 }
 
 html[data-mode="light"] {
-  --background: oklch(0.99 0.002 260);
-  --foreground: oklch(0.21 0.01 260);
+  /* Soft grey canvas with white cards: panels separate clearly without
+     heavy borders, the usual CRM dashboard look. Text and borders are a
+     notch darker than before for legibility. */
+  --background: oklch(0.973 0.004 255);
+  --foreground: oklch(0.2 0.015 260);
   --card: oklch(1 0 0);
-  --card-2: oklch(0.985 0.002 260);
-  --card-foreground: oklch(0.21 0.01 260);
+  --card-2: oklch(0.982 0.003 255);
+  --card-foreground: oklch(0.2 0.015 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.01 260);
-  --secondary: oklch(0.967 0.003 260);
-  --secondary-foreground: oklch(0.25 0.01 260);
-  --muted: oklch(0.967 0.003 260);
-  --muted-foreground: oklch(0.52 0.015 260);
-  --accent: oklch(0.96 0.004 260);
-  --accent-foreground: oklch(0.25 0.01 260);
+  --popover-foreground: oklch(0.2 0.015 260);
+  --secondary: oklch(0.955 0.005 255);
+  --secondary-foreground: oklch(0.25 0.015 260);
+  --muted: oklch(0.955 0.005 255);
+  --muted-foreground: oklch(0.46 0.018 260);
+  --accent: oklch(0.95 0.006 255);
+  --accent-foreground: oklch(0.22 0.015 260);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0.004 260);
-  --input: oklch(0.922 0.004 260);
+  --border: oklch(0.9 0.006 255);
+  --input: oklch(0.88 0.008 255);
   --chart-2: oklch(0.6 0.1 260);
   --chart-3: oklch(0.7 0.06 260);
   --chart-4: oklch(0.8 0.04 260);
   --chart-5: oklch(0.87 0.03 260);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.002 260);
-  --sidebar-foreground: oklch(0.21 0.01 260);
-  --sidebar-accent: oklch(0.96 0.004 260);
-  --sidebar-accent-foreground: oklch(0.25 0.01 260);
-  --sidebar-border: oklch(0.922 0.004 260);
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.24 0.015 260);
+  --sidebar-accent: oklch(0.95 0.006 255);
+  --sidebar-accent-foreground: oklch(0.2 0.015 260);
+  --sidebar-border: oklch(0.9 0.006 255);
   --status-good: #0b7f0b;
   --status-warning: #946100;
   --status-serious: #c2532a;
   --status-critical: #c43232;
+}
+
+/* Light mode: a soft shadow lifts cards off the grey canvas. */
+html[data-mode="light"] [data-slot="card"] {
+  box-shadow: 0 1px 2px oklch(0.2 0.02 260 / 0.05), 0 1px 3px oklch(0.2 0.02 260 / 0.04);
+}
+
+
+/* ---- Light-mode legibility ----
+   Many components use pale text colours (text-red-300, text-amber-400…)
+   picked for dark surfaces; on white they wash out. In light mode they
+   map to the 700 shade of the same hue so status text, badges and
+   warnings stay readable without touching every component. */
+html[data-mode="light"] .text-red-100,
+html[data-mode="light"] .text-red-200,
+html[data-mode="light"] .text-red-300,
+html[data-mode="light"] .text-red-400 {
+  color: var(--color-red-700);
+}
+html[data-mode="light"] .text-amber-100,
+html[data-mode="light"] .text-amber-200,
+html[data-mode="light"] .text-amber-300,
+html[data-mode="light"] .text-amber-400 {
+  color: var(--color-amber-700);
+}
+html[data-mode="light"] .text-yellow-100,
+html[data-mode="light"] .text-yellow-200,
+html[data-mode="light"] .text-yellow-300,
+html[data-mode="light"] .text-yellow-400 {
+  color: var(--color-yellow-700);
+}
+html[data-mode="light"] .text-emerald-100,
+html[data-mode="light"] .text-emerald-200,
+html[data-mode="light"] .text-emerald-300,
+html[data-mode="light"] .text-emerald-400 {
+  color: var(--color-emerald-700);
+}
+html[data-mode="light"] .text-green-100,
+html[data-mode="light"] .text-green-200,
+html[data-mode="light"] .text-green-300,
+html[data-mode="light"] .text-green-400 {
+  color: var(--color-green-700);
+}
+html[data-mode="light"] .text-blue-100,
+html[data-mode="light"] .text-blue-200,
+html[data-mode="light"] .text-blue-300,
+html[data-mode="light"] .text-blue-400 {
+  color: var(--color-blue-700);
+}
+html[data-mode="light"] .text-sky-100,
+html[data-mode="light"] .text-sky-200,
+html[data-mode="light"] .text-sky-300,
+html[data-mode="light"] .text-sky-400 {
+  color: var(--color-sky-700);
+}
+html[data-mode="light"] .text-purple-100,
+html[data-mode="light"] .text-purple-200,
+html[data-mode="light"] .text-purple-300,
+html[data-mode="light"] .text-purple-400 {
+  color: var(--color-purple-700);
+}
+html[data-mode="light"] .text-violet-100,
+html[data-mode="light"] .text-violet-200,
+html[data-mode="light"] .text-violet-300,
+html[data-mode="light"] .text-violet-400 {
+  color: var(--color-violet-700);
+}
+html[data-mode="light"] .text-orange-100,
+html[data-mode="light"] .text-orange-200,
+html[data-mode="light"] .text-orange-300,
+html[data-mode="light"] .text-orange-400 {
+  color: var(--color-orange-700);
+}
+html[data-mode="light"] .text-rose-100,
+html[data-mode="light"] .text-rose-200,
+html[data-mode="light"] .text-rose-300,
+html[data-mode="light"] .text-rose-400 {
+  color: var(--color-rose-700);
+}
+html[data-mode="light"] .text-pink-100,
+html[data-mode="light"] .text-pink-200,
+html[data-mode="light"] .text-pink-300,
+html[data-mode="light"] .text-pink-400 {
+  color: var(--color-pink-700);
+}
+html[data-mode="light"] .text-teal-100,
+html[data-mode="light"] .text-teal-200,
+html[data-mode="light"] .text-teal-300,
+html[data-mode="light"] .text-teal-400 {
+  color: var(--color-teal-700);
+}
+html[data-mode="light"] .text-cyan-100,
+html[data-mode="light"] .text-cyan-200,
+html[data-mode="light"] .text-cyan-300,
+html[data-mode="light"] .text-cyan-400 {
+  color: var(--color-cyan-700);
+}
+html[data-mode="light"] .text-indigo-100,
+html[data-mode="light"] .text-indigo-200,
+html[data-mode="light"] .text-indigo-300,
+html[data-mode="light"] .text-indigo-400 {
+  color: var(--color-indigo-700);
 }
 
 /* ---- ACCENT: primary color ---- */
