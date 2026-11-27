@@ -1960,7 +1960,28 @@
       "phoneNumberIdNotNumeric": "O Phone Number ID deve conter apenas dígitos. Copie o id numérico em Meta → WhatsApp → Configuração da API, não o número de telefone em si.",
       "wabaIdNotNumeric": "O ID da conta do WhatsApp Business deve conter apenas dígitos. Copie-o em Meta → WhatsApp → Configuração da API.",
       "wabaSubscribed": "A conta do WhatsApp Business está inscrita neste app — os webhooks de entrada podem ser entregues.",
-      "wabaNotSubscribed": "A conta do WhatsApp Business não está inscrita neste app, então a Meta não entregará webhooks de entrada. Informe novamente o token de acesso e salve de novo para inscrevê-la."
+      "wabaNotSubscribed": "A conta do WhatsApp Business não está inscrita neste app, então a Meta não entregará webhooks de entrada. Informe novamente o token de acesso e salve de novo para inscrevê-la.",
+      "numbers": {
+        "title": "Connected numbers",
+        "description": "Run several WhatsApp numbers from one inbox. Each number keeps its own conversations and can feed its own pipeline.",
+        "add": "Add number",
+        "empty": "No number connected yet. Fill in the credentials below to connect your first one.",
+        "unnamed": "Unnamed number",
+        "default": "Default",
+        "connected": "Connected",
+        "disconnected": "Not connected",
+        "editCredentials": "Edit credentials",
+        "makeDefault": "Make default",
+        "defaultSet": "Default number updated",
+        "label": "Number name",
+        "labelPlaceholder": "e.g. Decordec, RMC, Saze Home",
+        "pipeline": "Pipeline",
+        "noPipeline": "No pipeline",
+        "autoDeal": "Auto-create deal",
+        "saved": "Saved",
+        "saveFailed": "Could not save the change",
+        "templatesNote": "Message templates sync from the default number's WhatsApp Business Account, so keep all numbers under the same WABA. The default number is also used for contact-page and API sends unless another number is chosen."
+      }
     },
     "sections": {
       "overview": "Visão geral",
@@ -2955,7 +2976,8 @@
     "send": {
       "idsRequired": "É necessário informar conversation_id ou contact_id, além de message_type",
       "contactNotFound": "Contato não encontrado",
-      "openConversationFailed": "Falha ao abrir uma conversa com este contato"
+      "openConversationFailed": "Falha ao abrir uma conversa com este contato",
+      "notConfigured": "WhatsApp não configurado para esta conta"
     },
     "templates": {
       "invalidId": "ID de modelo inválido.",
@@ -2983,5 +3005,11 @@
       "metaApiStatus": "Erro da API da Meta: {status}",
       "syncFailed": "Falha ao sincronizar os modelos"
     }
+  },
+  "MultiNumber": {
+    "allNumbers": "All numbers",
+    "numberFilter": "Number",
+    "fromNumber": "Send from",
+    "fromNumberHint": "The WhatsApp number this broadcast goes out from."
   }
 }

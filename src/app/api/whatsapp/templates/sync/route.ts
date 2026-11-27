@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getDefaultWhatsAppConfig } from '@/lib/whatsapp/config-resolver'
 import {
   ForbiddenError,
   UnauthorizedError,
@@ -142,13 +143,9 @@ export async function POST() {
     const limit = checkRateLimit(`whatsapp-admin:${userId}`, RATE_LIMITS.whatsappAdmin)
     if (!limit.success) return rateLimitResponse(limit)
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
+    const config = await getDefaultWhatsAppConfig(supabase, accountId)
 
-    if (configError || !config) {
+    if (!config) {
       return NextResponse.json(
         {
           error:

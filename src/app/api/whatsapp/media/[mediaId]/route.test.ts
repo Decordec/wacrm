@@ -34,6 +34,14 @@ vi.mock('@/lib/supabase/server', () => ({
           data: table === 'whatsapp_config' ? { access_token: 'enc-token' } : null,
           error: null,
         }),
+        // The route lists every connected number (migration 061) and
+        // tries each token until Meta returns the file.
+        order: () => chain,
+        then: (resolve: (v: unknown) => unknown) =>
+          resolve({
+            data: table === 'whatsapp_config' ? [{ access_token: 'enc-token' }] : [],
+            error: null,
+          }),
       }
       return chain
     },

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getWhatsAppConfigOrDefault } from '@/lib/whatsapp/config-resolver'
 import { createClient } from '@/lib/supabase/server'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import {
@@ -32,7 +33,7 @@ const t = getT('Api')
  * rather than a generic error toast. The combined `live` flag is
  * what the UI badges on.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -62,11 +63,10 @@ export async function GET() {
     })
   }
 
-  const { data: config } = await supabase
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .maybeSingle()
+  // ?config_id= checks one of several numbers (migration 061);
+  // omitted → the account's default number.
+  const configId = new URL(request.url).searchParams.get('config_id')
+  const config = await getWhatsAppConfigOrDefault(supabase, accountId, configId)
 
   if (!config) {
     return NextResponse.json({

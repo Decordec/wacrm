@@ -31,6 +31,7 @@ vi.mock('@/lib/whatsapp/meta-api', () => ({
 }))
 
 import { GET } from './route'
+vi.mock('@/lib/whatsapp/config-resolver', () => import('@/lib/whatsapp/config-resolver.test-double'));
 
 beforeEach(() => {
   storedConfig = null

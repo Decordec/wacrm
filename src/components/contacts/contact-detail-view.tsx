@@ -1,5 +1,6 @@
 'use client';
 
+import { NumberPicker } from '@/components/whatsapp/number-picker';
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
@@ -71,6 +72,8 @@ export function ContactDetailView({
   // with this contact by sending an approved template. The send route
   // find-or-creates the conversation, so no inbound message is required.
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  // Number the template goes out from (migration 061).
+  const [sendFromNumberId, setSendFromNumberId] = useState<string | null>(null);
   const [sendingTemplate, setSendingTemplate] = useState(false);
 
   // Details tab
@@ -352,6 +355,7 @@ export function ContactDetailView({
           // No conversation_id — the route find-or-creates one for this
           // contact, mirroring the inbox template-send payload otherwise.
           contact_id: contactId,
+          ...(sendFromNumberId ? { whatsapp_config_id: sendFromNumberId } : {}),
           message_type: 'template',
           template_name: template.name,
           template_language: template.language,
@@ -446,7 +450,8 @@ export function ContactDetailView({
                   </div>
                 </div>
               </div>
-              <div className="mt-3">
+              <div className="mt-3 space-y-3">
+                <NumberPicker value={sendFromNumberId} onChange={setSendFromNumberId} />
                 <Button
                   size="sm"
                   onClick={() => setTemplatePickerOpen(true)}

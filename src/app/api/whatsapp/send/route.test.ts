@@ -172,6 +172,7 @@ vi.mock('@/lib/whatsapp/meta-api', () => ({
 }))
 
 import { POST } from './route'
+vi.mock('@/lib/whatsapp/config-resolver', () => import('@/lib/whatsapp/config-resolver.test-double'));
 
 function postContactTemplate(overrides: Record<string, unknown> = {}) {
   return POST(

@@ -9,6 +9,7 @@ import {
   RESUME_MAX_PER_REQUEST,
   RESUME_MAX_SCAN_PAGES,
 } from './broadcast-resume';
+vi.mock('@/lib/whatsapp/config-resolver', () => import('@/lib/whatsapp/config-resolver.test-double'));
 
 vi.mock('@/lib/whatsapp/encryption', () => ({
   decrypt: (v: string) => `decrypted:${v}`,

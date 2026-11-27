@@ -45,6 +45,7 @@ vi.mock('./admin-client', () => ({
 }))
 
 import { engineSendTemplate } from './meta-send'
+vi.mock('@/lib/whatsapp/config-resolver', () => import('@/lib/whatsapp/config-resolver.test-double'));
 
 type FetchResult = { ok: boolean; json: () => Promise<unknown> }
 

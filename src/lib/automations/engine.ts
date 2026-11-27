@@ -873,11 +873,17 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         agentId = profiles?.[0]?.user_id
       }
       if (!agentId) return 'no agent resolved'
-      await db
-        .from('conversations')
-        .update({ assigned_agent_id: agentId })
-        .eq('account_id', args.automation.account_id)
-        .eq('contact_id', args.contactId)
+      // Only the triggering conversation when we know it — with several
+      // numbers a contact can have several threads (migration 061).
+      {
+        let q = db
+          .from('conversations')
+          .update({ assigned_agent_id: agentId })
+          .eq('account_id', args.automation.account_id)
+          .eq('contact_id', args.contactId)
+        if (args.context.conversation_id) q = q.eq('id', args.context.conversation_id)
+        await q
+      }
       return `assigned to ${agentId}`
     }
 
@@ -988,11 +994,15 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 
     case 'close_conversation': {
       if (!args.contactId) throw new Error(tErr('needsContact', { step: 'close_conversation' }))
-      await db
-        .from('conversations')
-        .update({ status: 'closed', updated_at: new Date().toISOString() })
-        .eq('account_id', args.automation.account_id)
-        .eq('contact_id', args.contactId)
+      {
+        let q = db
+          .from('conversations')
+          .update({ status: 'closed', updated_at: new Date().toISOString() })
+          .eq('account_id', args.automation.account_id)
+          .eq('contact_id', args.contactId)
+        if (args.context.conversation_id) q = q.eq('id', args.context.conversation_id)
+        await q
+      }
       return 'conversation closed'
     }
 
@@ -1030,12 +1040,18 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
     return data.id as string
   }
   if (!args.contactId) throw new Error(tErr('noContactForConversation'))
-  const { data, error } = await supabaseAdmin()
+  // A contact can have one conversation per connected number (migration
+  // 061). Without a conversation in context, use the most recently
+  // active one — that's the number the customer last talked to.
+  const { data: rows, error } = await supabaseAdmin()
     .from('conversations')
     .select('id')
     .eq('account_id', args.automation.account_id)
     .eq('contact_id', args.contactId)
-    .maybeSingle()
+    .order('last_message_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: true })
+    .limit(1)
+  const data = rows?.[0] ?? null
   if (error) throw new Error(getT('LibErrors.send')('conversationLookupFailed', { message: error.message }))
   if (!data?.id) {
     throw new Error(

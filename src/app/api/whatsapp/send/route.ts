@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getWhatsAppConfigOrDefault } from '@/lib/whatsapp/config-resolver'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import {
@@ -62,6 +63,9 @@ export async function POST(request: Request) {
       template_message_params,
       interactive_payload,
       reply_to_message_id,
+      // Optional: which connected number a contact-page send goes out
+      // from (migration 061). Omitted → the account's default number.
+      whatsapp_config_id,
     } = body
 
     if ((!conversationIdInput && !contact_id) || !message_type) {
@@ -130,11 +134,25 @@ export async function POST(request: Request) {
         )
       }
 
+      const number = await getWhatsAppConfigOrDefault(
+        supabase,
+        accountId,
+        typeof whatsapp_config_id === 'string' ? whatsapp_config_id : null,
+        'id'
+      )
+      if (!number) {
+        return NextResponse.json(
+          { error: t('send.notConfigured') },
+          { status: 400 }
+        )
+      }
+
       const resolved = await findOrCreateConversation(
         supabase,
         accountId,
         userId,
-        contact_id
+        contact_id,
+        number.id
       )
       if (!resolved) {
         return NextResponse.json(
@@ -208,6 +226,7 @@ async function findOrCreateConversation(
   accountId: string,
   userId: string,
   contactId: string,
+  whatsappConfigId: string,
 ): Promise<string | null> {
   const findExisting = async () => {
     const { data } = await supabase
@@ -215,6 +234,9 @@ async function findOrCreateConversation(
       .select('id')
       .eq('account_id', accountId)
       .eq('contact_id', contactId)
+      .eq('whatsapp_config_id', whatsappConfigId)
+      .order('created_at', { ascending: true })
+      .limit(1)
       .maybeSingle()
     return data?.id ?? null
   }
@@ -228,6 +250,7 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: userId,
       contact_id: contactId,
+      whatsapp_config_id: whatsappConfigId,
     })
     .select('id')
     .single()

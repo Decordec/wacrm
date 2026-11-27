@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getDefaultWhatsAppConfig } from '@/lib/whatsapp/config-resolver'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import {
@@ -106,7 +107,7 @@ function metaFailure(err: unknown, step: MetaConnectStep, ctx: MetaErrorContext)
  *   { connected: false, reason: 'meta_api_error',   message: '...',
  *     meta: { code, subcode, fbtrace_id, step, field, message } }
  */
-export async function GET() {
+export async function GET(request?: Request) {
   try {
     const supabase = await createClient()
 
@@ -131,11 +132,24 @@ export async function GET() {
       )
     }
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('phone_number_id, waba_id, access_token, status')
-      .eq('account_id', accountId)
-      .maybeSingle()
+    // ?config_id= tests one of several numbers (migration 061); omitted →
+    // the account's default number.
+    const requestedId = request ? new URL(request.url).searchParams.get('config_id') : null
+    const configSelect = 'phone_number_id, waba_id, access_token, status'
+    let config: Awaited<ReturnType<typeof getDefaultWhatsAppConfig>> = null
+    let configError: { message: string } | null = null
+    if (requestedId) {
+      const res = await supabase
+        .from('whatsapp_config')
+        .select(configSelect)
+        .eq('account_id', accountId)
+        .eq('id', requestedId)
+        .maybeSingle()
+      config = res.data as typeof config
+      configError = res.error
+    } else {
+      config = await getDefaultWhatsAppConfig(supabase, accountId, configSelect)
+    }
 
     if (configError) {
       console.error('Error fetching whatsapp_config:', configError)
@@ -264,6 +278,12 @@ export async function POST(request: Request) {
 
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
+    // Multi-number (migration 061): `config_id` edits an existing number;
+    // without it a new phone_number_id adds a number. `label`,
+    // `pipeline_id`, `auto_create_deal` and `is_default` are optional.
+    const configIdInput: string | null =
+      typeof body.config_id === 'string' && body.config_id ? body.config_id : null
+    const numberSettings = pickNumberSettings(body)
 
     if (!access_token || !phone_number_id) {
       return NextResponse.json(
@@ -389,11 +409,26 @@ export async function POST(request: Request) {
     // around), and we need the stored verify_token — the settings form
     // never shows it, so a save that leaves the field blank must keep it
     // rather than null it out.
-    const { data: existing } = await supabase
+    // With several numbers (migration 061) the row is matched by
+    // `config_id` when editing, else by the phone_number_id itself.
+    let existingQuery = supabase
       .from('whatsapp_config')
       .select('id, registered_at, phone_number_id, verify_token')
       .eq('account_id', accountId)
-      .maybeSingle()
+    existingQuery = configIdInput
+      ? existingQuery.eq('id', configIdInput)
+      : existingQuery.eq('phone_number_id', phone_number_id)
+    const { data: existing } = await existingQuery.maybeSingle()
+    if (configIdInput && !existing) {
+      return NextResponse.json(
+        { error: t('whatsappConfig.updateFailed') },
+        { status: 404 }
+      )
+    }
+    const { count: numberCount } = await supabase
+      .from('whatsapp_config')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', accountId)
 
     // Encrypt sensitive tokens before storing
     let encryptedAccessToken: string
@@ -509,11 +544,26 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString(),
     }
 
+    // The first number an account connects becomes its default; any
+    // other number only becomes default when asked to.
+    const explicitDefault = numberSettings.is_default === true
+    const makeDefault = explicitDefault || (!existing && (numberCount ?? 0) === 0)
+    if (explicitDefault) {
+      await supabase
+        .from('whatsapp_config')
+        .update({ is_default: false })
+        .eq('account_id', accountId)
+        .eq('is_default', true)
+        .neq('id', existing?.id ?? '00000000-0000-0000-0000-000000000000')
+    }
+    const settingsPatch = { ...numberSettings, ...(makeDefault ? { is_default: true } : {}) }
+
     if (existing) {
       const { error: updateError } = await supabase
         .from('whatsapp_config')
-        .update(baseRow)
+        .update({ ...baseRow, ...settingsPatch })
         .eq('account_id', accountId)
+        .eq('id', existing.id)
 
       if (updateError) {
         console.error('Error updating whatsapp_config:', updateError)
@@ -524,15 +574,16 @@ export async function POST(request: Request) {
       }
     } else {
       // Insert with both columns: `account_id` is the tenancy key
-      // (NOT NULL post-017, UNIQUE so duplicates trip the constraint
-      // up-front), `user_id` is the audit column identifying which
-      // member of the account saved the config.
+      // (NOT NULL post-017; several rows allowed since 061), `user_id`
+      // is the audit column identifying which member of the account
+      // saved the config.
       const { error: insertError } = await supabase
         .from('whatsapp_config')
         .insert({
           account_id: accountId,
           user_id: userId,
           ...baseRow,
+          ...settingsPatch,
         })
 
       if (insertError) {
@@ -586,14 +637,20 @@ export async function POST(request: Request) {
  * Used by the "Reset Configuration" button to recover from a corrupted
  * encrypted token (mismatched ENCRYPTION_KEY across environments).
  */
-export async function DELETE() {
+export async function DELETE(request?: Request) {
   try {
     const { supabase, accountId } = await requireRole('admin')
 
-    const { error: deleteError } = await supabase
+    // ?config_id= removes one number (migration 061); without it every
+    // number is removed (the original "Reset Configuration" behaviour).
+    const configId = request ? new URL(request.url).searchParams.get('config_id') : null
+    let deleteQuery = supabase
       .from('whatsapp_config')
       .delete()
       .eq('account_id', accountId)
+    if (configId) deleteQuery = deleteQuery.eq('id', configId)
+    const { error: deleteError } = await deleteQuery
+    if (!deleteError && configId) await ensureDefaultNumber(supabase, accountId)
 
     if (deleteError) {
       console.error('Error deleting whatsapp_config:', deleteError)
@@ -611,4 +668,43 @@ export async function DELETE() {
     console.error('Error in WhatsApp config DELETE:', error)
     return NextResponse.json({ error: t('common.internalServerError') }, { status: 500 })
   }
+}
+
+/**
+ * Optional per-number settings accepted on save (migration 061).
+ * Unknown / malformed values are dropped rather than rejected.
+ */
+function pickNumberSettings(body: Record<string, unknown>): {
+  label?: string | null
+  pipeline_id?: string | null
+  auto_create_deal?: boolean
+  is_default?: boolean
+} {
+  const out: {
+    label?: string | null
+    pipeline_id?: string | null
+    auto_create_deal?: boolean
+    is_default?: boolean
+  } = {}
+  if (typeof body.label === 'string') out.label = body.label.trim().slice(0, 60) || null
+  if (body.pipeline_id === null || body.pipeline_id === '') out.pipeline_id = null
+  else if (typeof body.pipeline_id === 'string') out.pipeline_id = body.pipeline_id
+  if (typeof body.auto_create_deal === 'boolean') out.auto_create_deal = body.auto_create_deal
+  if (typeof body.is_default === 'boolean') out.is_default = body.is_default
+  return out
+}
+
+/** After a number is removed, make sure one of the rest is the default. */
+async function ensureDefaultNumber(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  accountId: string,
+) {
+  const { data: rows } = await supabase
+    .from('whatsapp_config')
+    .select('id, is_default')
+    .eq('account_id', accountId)
+    .order('created_at', { ascending: true })
+  if (!rows || rows.length === 0) return
+  if (rows.some((r: { is_default: boolean }) => r.is_default)) return
+  await supabase.from('whatsapp_config').update({ is_default: true }).eq('id', rows[0].id)
 }

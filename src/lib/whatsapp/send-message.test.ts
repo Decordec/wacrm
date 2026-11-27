@@ -6,6 +6,7 @@ import {
   SendMessageError,
   type SendMessageParams,
 } from './send-message';
+vi.mock('@/lib/whatsapp/config-resolver', () => import('@/lib/whatsapp/config-resolver.test-double'));
 
 // A db that explodes if touched — these tests cover the param
 // validation that MUST short-circuit before any query runs.

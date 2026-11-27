@@ -7,6 +7,7 @@
 // webhook and send path use), and one tag-sync routine.
 // ============================================================
 
+import { getDefaultWhatsAppConfig } from '@/lib/whatsapp/config-resolver';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
@@ -74,11 +75,7 @@ export async function resolveAuditUserId(
   db: SupabaseClient,
   accountId: string
 ): Promise<string> {
-  const { data: config } = await db
-    .from('whatsapp_config')
-    .select('user_id')
-    .eq('account_id', accountId)
-    .maybeSingle();
+  const config = await getDefaultWhatsAppConfig(db, accountId, 'user_id');
   const configOwner = config?.user_id as string | undefined;
   if (configOwner) return configOwner;
 

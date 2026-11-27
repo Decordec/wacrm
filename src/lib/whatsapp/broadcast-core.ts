@@ -16,6 +16,7 @@
 // for API broadcasts exactly as it does for dashboard ones.
 // ============================================================
 
+import { getWhatsAppConfigOrDefault } from '@/lib/whatsapp/config-resolver';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api';
@@ -53,6 +54,8 @@ export interface CreateBroadcastParams {
   templateName: string;
   templateLanguage?: string | null;
   recipients: BroadcastRecipientInput[];
+  /** Send from this connected number (migration 061); default number if omitted. */
+  whatsappConfigId?: string | null;
 }
 
 interface PlannedRecipient {
@@ -113,12 +116,12 @@ export async function createBroadcast(
 
   // Config (fail fast + provides the audit trail owner already resolved
   // by the caller). Meta send needs phone_number_id + decrypted token.
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-  if (configError || !config) {
+  const config = await getWhatsAppConfigOrDefault(
+    db,
+    accountId,
+    params.whatsappConfigId
+  );
+  if (!config) {
     throw new BroadcastError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',
@@ -226,6 +229,20 @@ export async function createBroadcast(
   }
 
   const broadcastId = createdRows[0].broadcast_id as string;
+
+  // Remember which number sent it, so a resume goes out from the same
+  // one. Best-effort: a failure only means a resume falls back to the
+  // default number, so it must not fail the broadcast.
+  try {
+    const { error: stampErr } = await db
+      .from('broadcasts')
+      .update({ whatsapp_config_id: config.id })
+      .eq('id', broadcastId)
+      .eq('account_id', accountId);
+    if (stampErr) console.warn('[broadcast-core] number stamp failed:', stampErr.message);
+  } catch (err) {
+    console.warn('[broadcast-core] number stamp threw:', err instanceof Error ? err.message : err);
+  }
 
   // Pair each inserted recipient row back to its phone/params by
   // contact_id — unambiguous now that duplicates are collapsed.

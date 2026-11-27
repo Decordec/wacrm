@@ -11,6 +11,7 @@ import { Step2SelectAudience } from '@/components/broadcasts/step2-select-audien
 import { Step3Personalize } from '@/components/broadcasts/step3-personalize';
 import { Step4ScheduleSend } from '@/components/broadcasts/step4-schedule-send';
 import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
+import { NumberPicker } from '@/components/whatsapp/number-picker';
 import { Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -45,6 +46,7 @@ export default function NewBroadcastPage() {
   >({});
   const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [name, setName] = useState('');
+  const [whatsappConfigId, setWhatsappConfigId] = useState<string | null>(null);
 
   async function handleSend() {
     if (!template) return;
@@ -62,6 +64,7 @@ export default function NewBroadcastPage() {
         },
         variables,
         headerMediaUrl,
+        whatsappConfigId,
       });
       if (interruption === 'lease_lost') toast.warning(t('toastSendTakenOver'));
       if (interruption === 'lease_error') toast.error(t('toastSendInterrupted'));
@@ -110,6 +113,7 @@ export default function NewBroadcastPage() {
       template_name: template.name,
       template_language: template.language ?? 'en_US',
       template_variables: variables,
+      ...(whatsappConfigId ? { whatsapp_config_id: whatsappConfigId } : {}),
       audience_filter: {
         type: audience.type,
         tagIds: audience.tagIds,
@@ -140,6 +144,9 @@ export default function NewBroadcastPage() {
           {t('subtitle')}
         </p>
       </div>
+
+      {/* Which number sends it — hidden for single-number accounts */}
+      <NumberPicker value={whatsappConfigId} onChange={setWhatsappConfigId} />
 
       {/* Step Indicator */}
       <div className="flex items-center justify-between">

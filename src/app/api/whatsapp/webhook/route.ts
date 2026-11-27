@@ -416,7 +416,14 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // Default ON: the column is NOT NULL DEFAULT TRUE, but a row
           // read before migration 039 lands would have it undefined,
           // and losing attachments is the failure mode worth avoiding.
-          config.mirror_inbound_media !== false
+          config.mirror_inbound_media !== false,
+          // The number this message arrived on — each number keeps its
+          // own conversation with the contact (migration 061).
+          {
+            id: config.id,
+            pipelineId: config.pipeline_id ?? null,
+            autoCreateDeal: config.auto_create_deal === true,
+          }
         )
       }
     }
@@ -603,7 +610,8 @@ async function processMessage(
   accessToken: string,
   // Per-account opt-out for the inbound-media mirror (migration 039).
   // See parseMessageContent for what it turns off.
-  mirrorMedia: boolean
+  mirrorMedia: boolean,
+  number: InboundNumber
 ) {
   // Phone number OR business-scoped user ID — Meta sends only the
   // latter for a sender who has adopted a WhatsApp username (#519).
@@ -632,10 +640,25 @@ async function processMessage(
   const convResult = await findOrCreateConversation(
     accountId,
     configOwnerUserId,
-    contactRecord.id
+    contactRecord.id,
+    number.id
   )
   if (!convResult) return
   const conversation = convResult.conversation
+
+  // A brand-new thread on a number with "auto-create deal" switched on
+  // opens a deal in that number's pipeline. Best-effort: a failure here
+  // must never drop the inbound message.
+  if (convResult.created && number.autoCreateDeal && number.pipelineId) {
+    await openDealForNewConversation({
+      accountId,
+      userId: configOwnerUserId,
+      pipelineId: number.pipelineId,
+      contactId: contactRecord.id,
+      contactName: contactRecord.name || contactRecord.phone || null,
+      conversationId: conversation.id,
+    })
+  }
 
   // Emit conversation.created as soon as the thread is opened — BEFORE
   // the reaction short-circuit below — so a conversation first opened by
@@ -1387,10 +1410,58 @@ async function findOrCreateContact(
   return { contact: newContact, wasCreated: true }
 }
 
+interface InboundNumber {
+  /** whatsapp_config.id the message arrived on. */
+  id: string
+  /** Pipeline this number's leads go into (migration 061). */
+  pipelineId: string | null
+  autoCreateDeal: boolean
+}
+
+async function openDealForNewConversation(args: {
+  accountId: string
+  userId: string
+  pipelineId: string
+  contactId: string
+  contactName: string | null
+  conversationId: string
+}) {
+  try {
+    const db = supabaseAdmin()
+    const { data: stages } = await db
+      .from('pipeline_stages')
+      .select('id')
+      .eq('pipeline_id', args.pipelineId)
+      .order('position', { ascending: true })
+      .limit(1)
+    const stageId = stages?.[0]?.id
+    if (!stageId) return
+    const { data: account } = await db
+      .from('accounts')
+      .select('default_currency')
+      .eq('id', args.accountId)
+      .maybeSingle()
+    const { error } = await db.from('deals').insert({
+      account_id: args.accountId,
+      user_id: args.userId,
+      pipeline_id: args.pipelineId,
+      stage_id: stageId,
+      contact_id: args.contactId,
+      conversation_id: args.conversationId,
+      title: args.contactName || 'New WhatsApp lead',
+      ...(account?.default_currency ? { currency: account.default_currency } : {}),
+    })
+    if (error) console.error('[webhook] auto-create deal failed:', error.message)
+  } catch (err) {
+    console.error('[webhook] auto-create deal threw:', err instanceof Error ? err.message : err)
+  }
+}
+
 async function findOrCreateConversation(
   accountId: string,
   configOwnerUserId: string,
   contactId: string,
+  whatsappConfigId: string,
 ) {
   // Look for an existing conversation in this account, oldest-first.
   //
@@ -1410,6 +1481,7 @@ async function findOrCreateConversation(
     .select('*')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
+    .eq('whatsapp_config_id', whatsappConfigId)
     .order('created_at', { ascending: true })
     .limit(1)
 
@@ -1430,6 +1502,7 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: configOwnerUserId,
       contact_id: contactId,
+      whatsapp_config_id: whatsappConfigId,
     })
     .select()
     .single()
@@ -1445,6 +1518,7 @@ async function findOrCreateConversation(
         .select('*')
         .eq('account_id', accountId)
         .eq('contact_id', contactId)
+        .eq('whatsapp_config_id', whatsappConfigId)
         .order('created_at', { ascending: true })
         .limit(1)
       if (raced && raced.length > 0) {

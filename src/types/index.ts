@@ -172,6 +172,8 @@ export interface Conversation {
   id: string;
   user_id: string;
   contact_id: string;
+  /** The WhatsApp number this thread runs on (migration 061). */
+  whatsapp_config_id?: string | null;
   status: ConversationStatus;
   assigned_agent_id?: string;
   last_message_text?: string;
@@ -320,6 +322,14 @@ export interface WhatsAppConfig {
    * inbound attachments expire. Migration 039.
    */
   mirror_inbound_media?: boolean;
+  /** Display name for this number, e.g. "Decordec" (migration 061). */
+  label?: string | null;
+  /** The account's default number — used when nothing else decides. */
+  is_default?: boolean;
+  /** Pipeline this number's leads belong to. */
+  pipeline_id?: string | null;
+  /** Open a deal in `pipeline_id` for every new conversation. */
+  auto_create_deal?: boolean;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)

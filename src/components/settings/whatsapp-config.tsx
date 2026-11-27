@@ -24,6 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { SettingsPanelHead } from './settings-panel-head';
+import { WhatsAppNumbersPanel, type WhatsAppNumberSummary } from './whatsapp-numbers-panel';
 import {
   Accordion,
   AccordionItem,
@@ -98,6 +99,12 @@ export function WhatsAppConfig() {
   // again and overwrites whatever the user typed but hadn't saved yet.
   const loadedAccountIdRef = useRef<string | null>(null);
 
+  // Several numbers per account (migration 061): the list, and which
+  // one the credentials form edits (null = adding a new number).
+  const [numbers, setNumbers] = useState<WhatsAppNumberSummary[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  const [numberLabel, setNumberLabel] = useState('');
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [wabaId, setWabaId] = useState('');
   const [accessToken, setAccessToken] = useState('');
@@ -140,7 +147,14 @@ export function WhatsAppConfig() {
       ? `${window.location.origin}/api/whatsapp/webhook`
       : '';
 
-  const fetchConfig = useCallback(async (acctId: string) => {
+  const fetchConfig = useCallback(async (
+    acctId: string,
+    // Which number to show in the form: an id, 'new' for a blank form,
+    // or omitted to keep the current selection (falling back to the
+    // default number).
+    prefer?: string | 'new',
+    preferPhoneNumberId?: string,
+  ) => {
     setLoading(true);
     try {
       // Load form values from Supabase (shows what's in DB).
@@ -149,15 +163,42 @@ export function WhatsAppConfig() {
       // account sees the same saved configuration. UNIQUE(account_id)
       // on the table guarantees the .maybeSingle() return type
       // remains accurate.
-      const { data, error } = await supabase
+      // Every number on the account, default first (migration 061).
+      const { data: rows, error } = await supabase
         .from('whatsapp_config')
         .select('*')
         .eq('account_id', acctId)
-        .maybeSingle();
+        .order('is_default', { ascending: false })
+        .order('created_at', { ascending: true });
 
       if (error) {
         console.error('Failed to load config row:', error);
       }
+
+      const allRows = (rows ?? []) as WhatsAppConfigType[];
+      setNumbers(
+        allRows.map((r) => ({
+          id: r.id,
+          label: r.label ?? null,
+          phone_number_id: r.phone_number_id,
+          waba_id: r.waba_id ?? null,
+          status: r.status,
+          is_default: r.is_default === true,
+          pipeline_id: r.pipeline_id ?? null,
+          auto_create_deal: r.auto_create_deal === true,
+        })),
+      );
+      const wantedId = prefer === 'new' ? null : prefer ?? selectedIdRef.current;
+      const data =
+        prefer === 'new'
+          ? null
+          : (preferPhoneNumberId && allRows.find((r) => r.phone_number_id === preferPhoneNumberId)) ||
+            (wantedId && allRows.find((r) => r.id === wantedId)) ||
+            allRows[0] ||
+            null;
+      selectedIdRef.current = data?.id ?? null;
+      setSelectedId(data?.id ?? null);
+      setNumberLabel(data?.label ?? '');
 
       if (data) {
         setConfig(data);
@@ -191,7 +232,10 @@ export function WhatsAppConfig() {
       // Then verify health via the API (decrypts token + pings Meta)
       if (data) {
         try {
-          const res = await fetch('/api/whatsapp/config', { method: 'GET' });
+          const res = await fetch(
+            `/api/whatsapp/config?config_id=${encodeURIComponent(data.id)}`,
+            { method: 'GET' },
+          );
           const payload = await res.json();
 
           if (payload.connected) {
@@ -254,7 +298,8 @@ export function WhatsAppConfig() {
       const { error } = await supabase
         .from('whatsapp_config')
         .update({ mirror_inbound_media: next })
-        .eq('account_id', accountId);
+        .eq('account_id', accountId)
+        .eq('id', config.id);
       if (error) throw new Error(error.message);
       setConfig({ ...config, mirror_inbound_media: next });
     } catch (error) {
@@ -293,6 +338,9 @@ export function WhatsAppConfig() {
       // which then fails decryption on every subsequent health check.
       const payload: Record<string, unknown> = {
         phone_number_id: phoneNumberId.trim(),
+        // Editing an existing number vs adding a new one (migration 061).
+        ...(config ? { config_id: config.id } : {}),
+        label: numberLabel.trim(),
         waba_id: wabaId.trim() || null,
         // Only sent when the user actually typed one. Left out otherwise
         // (undefined is dropped from the JSON body) so the server keeps the
@@ -379,7 +427,7 @@ export function WhatsAppConfig() {
         setPin('');
       }
 
-      if (accountId) await fetchConfig(accountId);
+      if (accountId) await fetchConfig(accountId, config?.id, phoneNumberId.trim());
     } catch (err) {
       console.error('Save error:', err);
       toast.error(t('saveFailed'));
@@ -391,7 +439,10 @@ export function WhatsAppConfig() {
   async function handleTestConnection() {
     try {
       setTesting(true);
-      const res = await fetch('/api/whatsapp/config', { method: 'GET' });
+      const res = await fetch(
+        config ? `/api/whatsapp/config?config_id=${encodeURIComponent(config.id)}` : '/api/whatsapp/config',
+        { method: 'GET' },
+      );
       const payload = await res.json();
 
       if (payload.connected) {
@@ -426,9 +477,12 @@ export function WhatsAppConfig() {
     setVerifyingRegistration(true);
     setRegistrationProbe(null);
     try {
-      const res = await fetch('/api/whatsapp/config/verify-registration', {
-        method: 'GET',
-      });
+      const res = await fetch(
+        config
+          ? `/api/whatsapp/config/verify-registration?config_id=${encodeURIComponent(config.id)}`
+          : '/api/whatsapp/config/verify-registration',
+        { method: 'GET' },
+      );
       const data = (await res.json()) as RegistrationProbe;
       setRegistrationProbe(data);
       if (data.live) {
@@ -455,7 +509,11 @@ export function WhatsAppConfig() {
 
     try {
       setResetting(true);
-      const res = await fetch('/api/whatsapp/config', { method: 'DELETE' });
+      // Removes only the number being edited (migration 061).
+      const res = await fetch(
+        config ? `/api/whatsapp/config?config_id=${encodeURIComponent(config.id)}` : '/api/whatsapp/config',
+        { method: 'DELETE' },
+      );
       const data = await res.json();
 
       if (!res.ok) {
@@ -477,6 +535,7 @@ export function WhatsAppConfig() {
       setStatusMeta(null);
       setSaveFailure(null);
       setWabaSubscription(null);
+      if (accountId) await fetchConfig(accountId);
     } catch (err) {
       console.error('Reset error:', err);
       toast.error(t('resetFailed'));
@@ -548,6 +607,20 @@ export function WhatsAppConfig() {
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       {/* Main config form */}
       <div className="space-y-6">
+        <WhatsAppNumbersPanel
+          numbers={numbers}
+          selectedId={selectedId}
+          canEdit={canEditSettings}
+          onSelect={(id) => {
+            if (accountId) void fetchConfig(accountId, id);
+          }}
+          onAddNew={() => {
+            if (accountId) void fetchConfig(accountId, 'new');
+          }}
+          onChanged={() => {
+            if (accountId) void fetchConfig(accountId);
+          }}
+        />
         {/* Corrupted-token reset banner */}
         {showResetBanner && (
           <Alert className="bg-amber-950/40 border-amber-600/40">
@@ -748,6 +821,15 @@ export function WhatsAppConfig() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">{t('numbers.label')}</Label>
+              <Input
+                placeholder={t('numbers.labelPlaceholder')}
+                value={numberLabel}
+                onChange={(e) => setNumberLabel(e.target.value)}
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+            </div>
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('phoneNumberId')}</Label>
               <Input

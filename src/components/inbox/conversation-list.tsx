@@ -82,6 +82,11 @@ export function ConversationList({
   const [tags, setTags] = useState<Tag[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+  // Connected WhatsApp numbers (migration 061). The number badge and
+  // filter only appear once an account runs more than one number.
+  const [numbers, setNumbers] = useState<{ id: string; label: string | null; phone_number_id: string }[]>([]);
+  const [numberFilter, setNumberFilter] = useState<string>("all");
+  const tNumbers = useTranslations("MultiNumber");
 
   // Keep the latest callback in a ref so the fetch effect below can
   // have a stable, empty-dep identity. Previously the fetch useCallback
@@ -150,6 +155,29 @@ export function ConversationList({
     };
   }, []);
 
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("whatsapp_config")
+        .select("id, label, phone_number_id")
+        .order("is_default", { ascending: false })
+        .order("created_at", { ascending: true });
+      if (!cancelled && data) setNumbers(data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const numberLabels = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const n of numbers) m.set(n.id, n.label || n.phone_number_id);
+    return m;
+  }, [numbers]);
+  const showNumbers = numbers.length > 1;
+
   // Company options are derived from the loaded conversations — there's no
   // separate companies table, and only companies with a live conversation
   // are worth offering as an inbox filter.
@@ -170,6 +198,10 @@ export function ConversationList({
 
   const filtered = useMemo(() => {
     let result = applyInboxFilter(conversations, filter, now);
+
+    if (numberFilter !== "all") {
+      result = result.filter((c) => c.whatsapp_config_id === numberFilter);
+    }
 
     // Contact-based filters (tags via OR logic, exact company match).
     if (selectedTagIds.length > 0 || selectedCompany !== null) {
@@ -192,7 +224,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, now, search, selectedTagIds, selectedCompany]);
+  }, [conversations, filter, now, search, selectedTagIds, selectedCompany, numberFilter]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -266,6 +298,42 @@ export function ConversationList({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {showNumbers && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                  numberFilter !== "all"
+                    ? "text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+                aria-label={tNumbers("numberFilter")}
+              >
+                {numberFilter === "all"
+                  ? tNumbers("allNumbers")
+                  : numberLabels.get(numberFilter) ?? tNumbers("numberFilter")}
+                <ChevronDown className="h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="border-border bg-popover">
+                <DropdownMenuItem
+                  onClick={() => setNumberFilter("all")}
+                  className={cn("text-sm", numberFilter === "all" ? "text-primary" : "text-popover-foreground")}
+                >
+                  {tNumbers("allNumbers")}
+                </DropdownMenuItem>
+                {numbers.map((n) => (
+                  <DropdownMenuItem
+                    key={n.id}
+                    onClick={() => setNumberFilter(n.id)}
+                    className={cn("text-sm", numberFilter === n.id ? "text-primary" : "text-popover-foreground")}
+                  >
+                    {n.label || n.phone_number_id}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
           {tags.length > 0 && (
             <DropdownMenu>
@@ -418,6 +486,11 @@ export function ConversationList({
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
                 t={t}
+                numberLabel={
+                  showNumbers && conv.whatsapp_config_id
+                    ? numberLabels.get(conv.whatsapp_config_id) ?? null
+                    : null
+                }
               />
             ))}
           </div>
@@ -432,6 +505,8 @@ interface ConversationItemProps {
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
   t: ReturnType<typeof useTranslations>;
+  /** Which number the thread runs on — only set when the account has several. */
+  numberLabel?: string | null;
 }
 
 function ConversationItem({
@@ -439,6 +514,7 @@ function ConversationItem({
   isActive,
   onSelect,
   t,
+  numberLabel,
 }: ConversationItemProps) {
   const dateLocale = getDateLocale(useLocale());
   const contact = conversation.contact;
@@ -480,8 +556,15 @@ function ConversationItem({
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {displayName}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium text-foreground">
+              {displayName}
+            </span>
+            {numberLabel && (
+              <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                {numberLabel}
+              </span>
+            )}
           </span>
           <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
         </div>

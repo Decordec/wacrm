@@ -56,24 +56,40 @@ export async function GET(
       )
     }
 
-    // Fetch and decrypt WhatsApp config
-    const { data: config, error: configError } = await supabase
+    // Fetch the account's numbers, default first. With several numbers
+    // (migration 061) the media id may belong to any of them, and each
+    // can carry its own access token — try them in turn.
+    const { data: configs, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('*')
+      .select('access_token')
       .eq('account_id', accountId)
-      .single()
+      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: true })
 
-    if (configError || !config) {
+    if (configError || !configs || configs.length === 0) {
       return NextResponse.json(
         { error: t('common.whatsappNotConfigured') },
         { status: 400 }
       )
     }
 
-    const accessToken = decrypt(config.access_token)
-
-    // Get the download URL from Meta
-    const mediaInfo = await getMediaUrl({ mediaId, accessToken })
+    let accessToken = ''
+    let mediaInfo: Awaited<ReturnType<typeof getMediaUrl>> | null = null
+    let lastError: unknown = null
+    const seenTokens = new Set<string>()
+    for (const row of configs) {
+      const token = decrypt(row.access_token)
+      if (seenTokens.has(token)) continue
+      seenTokens.add(token)
+      try {
+        mediaInfo = await getMediaUrl({ mediaId, accessToken: token })
+        accessToken = token
+        break
+      } catch (err) {
+        lastError = err
+      }
+    }
+    if (!mediaInfo) throw lastError ?? new Error('Media not found')
 
     // Download the binary data
     const { buffer, contentType } = await downloadMedia({

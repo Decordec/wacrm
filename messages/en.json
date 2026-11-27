@@ -1960,7 +1960,28 @@
       "phoneNumberIdNotNumeric": "Phone Number ID must contain only digits. Copy the numeric id from Meta → WhatsApp → API Setup, not the phone number itself.",
       "wabaIdNotNumeric": "WhatsApp Business Account ID must contain only digits. Copy it from Meta → WhatsApp → API Setup.",
       "wabaSubscribed": "The WhatsApp Business Account is subscribed to this app — inbound webhooks can be delivered.",
-      "wabaNotSubscribed": "The WhatsApp Business Account is not subscribed to this app, so Meta will not deliver inbound webhooks. Re-enter the access token and save again to subscribe it."
+      "wabaNotSubscribed": "The WhatsApp Business Account is not subscribed to this app, so Meta will not deliver inbound webhooks. Re-enter the access token and save again to subscribe it.",
+      "numbers": {
+        "title": "Connected numbers",
+        "description": "Run several WhatsApp numbers from one inbox. Each number keeps its own conversations and can feed its own pipeline.",
+        "add": "Add number",
+        "empty": "No number connected yet. Fill in the credentials below to connect your first one.",
+        "unnamed": "Unnamed number",
+        "default": "Default",
+        "connected": "Connected",
+        "disconnected": "Not connected",
+        "editCredentials": "Edit credentials",
+        "makeDefault": "Make default",
+        "defaultSet": "Default number updated",
+        "label": "Number name",
+        "labelPlaceholder": "e.g. Decordec, RMC, Saze Home",
+        "pipeline": "Pipeline",
+        "noPipeline": "No pipeline",
+        "autoDeal": "Auto-create deal",
+        "saved": "Saved",
+        "saveFailed": "Could not save the change",
+        "templatesNote": "Message templates sync from the default number's WhatsApp Business Account, so keep all numbers under the same WABA. The default number is also used for contact-page and API sends unless another number is chosen."
+      }
     },
     "sections": {
       "overview": "Overview",
@@ -2955,7 +2976,8 @@
     "send": {
       "idsRequired": "Either conversation_id or contact_id, plus message_type, are required",
       "contactNotFound": "Contact not found",
-      "openConversationFailed": "Failed to open a conversation for this contact"
+      "openConversationFailed": "Failed to open a conversation for this contact",
+      "notConfigured": "WhatsApp not configured for this account"
     },
     "templates": {
       "invalidId": "Invalid template id.",
@@ -2983,5 +3005,11 @@
       "metaApiStatus": "Meta API error: {status}",
       "syncFailed": "Failed to sync templates"
     }
+  },
+  "MultiNumber": {
+    "allNumbers": "All numbers",
+    "numberFilter": "Number",
+    "fromNumber": "Send from",
+    "fromNumberHint": "The WhatsApp number this broadcast goes out from."
   }
 }

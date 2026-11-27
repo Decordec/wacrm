@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getWhatsAppConfigOrDefault } from '@/lib/whatsapp/config-resolver'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
@@ -92,6 +93,8 @@ export async function POST(request: Request) {
       template_name,
       template_language,
       template_params,
+      // Which connected number to send from (migration 061).
+      whatsapp_config_id,
     } = body
 
     // Normalize to a list of {phone, params} regardless of shape.
@@ -123,13 +126,13 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
+    const config = await getWhatsAppConfigOrDefault(
+      supabase,
+      accountId,
+      typeof whatsapp_config_id === 'string' ? whatsapp_config_id : null,
+    )
 
-    if (configError || !config) {
+    if (!config) {
       return NextResponse.json(
         {
           error:

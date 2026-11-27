@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getWhatsAppConfigOrDefault } from '@/lib/whatsapp/config-resolver'
 import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { getPhoneNumberHealth } from '@/lib/whatsapp/meta-api'
@@ -21,18 +22,22 @@ const EMPTY: Omit<PhoneHealth, 'state'> = {
   limit: null,
 }
 
-export async function GET() {
+export async function GET(request?: Request) {
   try {
     const { supabase, accountId, userId } = await getCurrentAccount()
 
     const limit = checkRateLimit(`whatsapp-health:${userId}`, RATE_LIMITS.whatsappHealth)
     if (!limit.success) return rateLimitResponse(limit)
 
-    const { data: config } = await supabase
-      .from('whatsapp_config')
-      .select('phone_number_id, access_token, status')
-      .eq('account_id', accountId)
-      .maybeSingle()
+    // ?config_id= picks one of several numbers (migration 061);
+    // omitted → the account's default number.
+    const configId = request ? new URL(request.url).searchParams.get('config_id') : null
+    const config = await getWhatsAppConfigOrDefault(
+      supabase,
+      accountId,
+      configId,
+      'phone_number_id, access_token, status',
+    )
 
     if (!config || config.status !== 'connected' || !config.phone_number_id) {
       return reply({ state: 'disconnected', ...EMPTY })

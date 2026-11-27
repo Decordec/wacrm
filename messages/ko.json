@@ -1960,7 +1960,28 @@
       "phoneNumberIdNotNumeric": "전화번호 ID는 숫자만 포함해야 합니다. 전화번호가 아닌, Meta → WhatsApp → API 설정에 표시된 숫자 ID를 복사하세요.",
       "wabaIdNotNumeric": "WhatsApp 비즈니스 계정 ID는 숫자만 포함해야 합니다. Meta → WhatsApp → API 설정에서 복사하세요.",
       "wabaSubscribed": "WhatsApp 비즈니스 계정이 이 앱에 구독되어 있어 수신 웹훅을 받을 수 있습니다.",
-      "wabaNotSubscribed": "WhatsApp 비즈니스 계정이 이 앱에 구독되어 있지 않아 Meta가 수신 웹훅을 전달하지 않습니다. 액세스 토큰을 다시 입력하고 저장해 구독하세요."
+      "wabaNotSubscribed": "WhatsApp 비즈니스 계정이 이 앱에 구독되어 있지 않아 Meta가 수신 웹훅을 전달하지 않습니다. 액세스 토큰을 다시 입력하고 저장해 구독하세요.",
+      "numbers": {
+        "title": "Connected numbers",
+        "description": "Run several WhatsApp numbers from one inbox. Each number keeps its own conversations and can feed its own pipeline.",
+        "add": "Add number",
+        "empty": "No number connected yet. Fill in the credentials below to connect your first one.",
+        "unnamed": "Unnamed number",
+        "default": "Default",
+        "connected": "Connected",
+        "disconnected": "Not connected",
+        "editCredentials": "Edit credentials",
+        "makeDefault": "Make default",
+        "defaultSet": "Default number updated",
+        "label": "Number name",
+        "labelPlaceholder": "e.g. Decordec, RMC, Saze Home",
+        "pipeline": "Pipeline",
+        "noPipeline": "No pipeline",
+        "autoDeal": "Auto-create deal",
+        "saved": "Saved",
+        "saveFailed": "Could not save the change",
+        "templatesNote": "Message templates sync from the default number's WhatsApp Business Account, so keep all numbers under the same WABA. The default number is also used for contact-page and API sends unless another number is chosen."
+      }
     },
     "sections": {
       "overview": "개요",
@@ -2955,7 +2976,8 @@
     "send": {
       "idsRequired": "conversation_id 또는 contact_id와 message_type이 필요합니다",
       "contactNotFound": "연락처를 찾을 수 없습니다",
-      "openConversationFailed": "이 연락처와 대화를 열지 못했습니다"
+      "openConversationFailed": "이 연락처와 대화를 열지 못했습니다",
+      "notConfigured": "이 계정에 WhatsApp이 설정되어 있지 않습니다"
     },
     "templates": {
       "invalidId": "잘못된 템플릿 ID입니다.",
@@ -2983,5 +3005,11 @@
       "metaApiStatus": "Meta API 오류: {status}",
       "syncFailed": "템플릿을 동기화하지 못했습니다"
     }
+  },
+  "MultiNumber": {
+    "allNumbers": "All numbers",
+    "numberFilter": "Number",
+    "fromNumber": "Send from",
+    "fromNumberHint": "The WhatsApp number this broadcast goes out from."
   }
 }

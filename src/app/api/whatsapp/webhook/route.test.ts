@@ -22,6 +22,8 @@ const h = vi.hoisted(() => ({
     afterCallbacks: [] as (() => Promise<void> | void)[],
     automationStarted: 0,
     automationCompleted: 0,
+    /** Number filters applied to the conversation lookup (migration 061). */
+    conversationNumberFilters: [] as { column: string; value: unknown }[],
     /** whatsapp_config.mirror_inbound_media for the matched row (#466). */
     mirrorInboundMedia: true as boolean | undefined,
     /** Objects the inbound-media mirror pushed into chat-media. */
@@ -67,6 +69,7 @@ vi.mock('@supabase/supabase-js', () => ({
                 return Promise.resolve({
                   data: [
                     {
+                      id: 'cfg-1',
                       account_id: 'acc-1',
                       user_id: 'user-1',
                       access_token: 'enc',
@@ -79,18 +82,25 @@ vi.mock('@supabase/supabase-js', () => ({
             }),
           }
         case 'conversations':
-          // findOrCreateConversation: select().eq().eq().order().limit()
+          // findOrCreateConversation:
+          //   select().eq(account).eq(contact).eq(whatsapp_config_id).order().limit()
+          // — one conversation per (account, contact, number), migration 061.
           return {
             select: () => ({
               eq: () => ({
                 eq: () => ({
-                  order: () => ({
-                    limit: () =>
-                      Promise.resolve({
-                        data: [h.state.conversation],
-                        error: null,
+                  eq: (column: string, value: unknown) => {
+                    h.state.conversationNumberFilters.push({ column, value })
+                    return {
+                      order: () => ({
+                        limit: () =>
+                          Promise.resolve({
+                            data: [h.state.conversation],
+                            error: null,
+                          }),
                       }),
-                  }),
+                    }
+                  },
                 }),
               }),
             }),
@@ -379,6 +389,7 @@ beforeEach(() => {
   h.state.contactInserts = []
   h.state.contactUpdates = []
   h.state.whatsappConfigLookups = []
+  h.state.conversationNumberFilters = []
   h.state.broadcastRecipient = null
   h.state.recipientUpdates = []
   mockFindExistingContact.mockResolvedValue({
@@ -1227,5 +1238,15 @@ describe('inbound webhook: first_inbound_message fires once', () => {
     h.state.messageUpsertResult = []
     await runWebhook()
     expect(h.state.firstInboundClaims).toBe(0)
+  })
+})
+
+describe('inbound webhook: one conversation per connected number (migration 061)', () => {
+  it('looks the conversation up on the number the message arrived on', async () => {
+    await runWebhook()
+
+    expect(h.state.conversationNumberFilters).toEqual([
+      { column: 'whatsapp_config_id', value: 'cfg-1' },
+    ])
   })
 })

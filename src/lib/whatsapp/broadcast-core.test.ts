@@ -5,6 +5,7 @@ import {
   finalizeBroadcastStatus,
   BroadcastError,
 } from './broadcast-core';
+vi.mock('@/lib/whatsapp/config-resolver', () => import('@/lib/whatsapp/config-resolver.test-double'));
 
 // Contact resolution and token decryption are exercised elsewhere — stub
 // them so these tests focus on the persistence boundary.
@@ -57,6 +58,7 @@ function makeDb(rpcResult: { data: unknown; error: unknown }) {
     // Incremented if the OLD non-atomic path (a direct broadcasts /
     // broadcast_recipients insert) is ever reached — it must not be.
     usedDirectInsert: 0,
+    numberStamps: [] as Record<string, unknown>[],
   };
   const database = {
     from(table: string) {
@@ -82,14 +84,23 @@ function makeDb(rpcResult: { data: unknown; error: unknown }) {
         return chain;
       }
       if (table === 'broadcasts' || table === 'broadcast_recipients') {
-        calls.usedDirectInsert++;
         return {
-          insert: () => ({
-            select: () => ({
-              single: () =>
-                Promise.resolve({ data: { id: 'orphan' }, error: null }),
-            }),
-          }),
+          insert: () => {
+            calls.usedDirectInsert++;
+            return {
+              select: () => ({
+                single: () =>
+                  Promise.resolve({ data: { id: 'orphan' }, error: null }),
+              }),
+            };
+          },
+          // Stamping the sending number on the RPC-created parent
+          // (migration 061) is an update, not the old orphan-prone insert.
+          update: (patch: Record<string, unknown>) => {
+            calls.numberStamps.push(patch);
+            const q = { eq: () => q, then: (r: (v: unknown) => unknown) => r({ error: null }) };
+            return q;
+          },
         };
       }
       throw new Error(`unexpected table: ${table}`);

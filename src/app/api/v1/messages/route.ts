@@ -105,7 +105,10 @@ export async function POST(request: Request) {
       ctx.supabase,
       ctx.accountId,
       to,
-      typeof body.name === 'string' ? body.name : null
+      typeof body.name === 'string' ? body.name : null,
+      // Optional: which connected number to send from (whatsapp_config.id).
+      // Omitted → the account's default number.
+      typeof body.whatsapp_config_id === 'string' ? body.whatsapp_config_id : null
     );
 
     if (resolved.conversationCreated) {
