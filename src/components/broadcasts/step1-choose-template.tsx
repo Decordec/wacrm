@@ -6,6 +6,7 @@ import { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Loader2, FileText, ArrowRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { resolveNumberWaba, wabaTemplateFilter } from '@/lib/whatsapp/template-scope';
 
 const categoryColors: Record<string, string> = {
   Marketing: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
@@ -18,9 +19,17 @@ interface Step1Props {
   onSelect: (template: MessageTemplate) => void;
   onNext: () => void;
   onBack: () => void;
+  /** Sending number — only its WABA's templates are listed (migration 062). */
+  whatsappConfigId?: string | null;
 }
 
-export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack }: Step1Props) {
+export function Step1ChooseTemplate({
+  selectedTemplate,
+  onSelect,
+  onNext,
+  onBack,
+  whatsappConfigId,
+}: Step1Props) {
   const t = useTranslations('Broadcasts.wizard');
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,11 +42,15 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         // Only APPROVED templates can be sent via Meta — anything else
         // would 400 at broadcast time. Hide them rather than letting
         // the user pick a template that will fail.
-        const { data, error: fetchError } = await supabase
+        const wabaId = await resolveNumberWaba(supabase, whatsappConfigId);
+        let query = supabase
           .from('message_templates')
           .select('*')
-          .eq('status', 'APPROVED')
-          .order('created_at', { ascending: false });
+          .eq('status', 'APPROVED');
+        if (wabaId) query = query.or(wabaTemplateFilter(wabaId));
+        const { data, error: fetchError } = await query.order('created_at', {
+          ascending: false,
+        });
 
         if (fetchError) throw fetchError;
         setTemplates(data ?? []);
@@ -48,8 +61,10 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
       }
     }
 
+    setLoading(true);
     fetchTemplates();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [whatsappConfigId]);
 
   if (loading) {
     return (

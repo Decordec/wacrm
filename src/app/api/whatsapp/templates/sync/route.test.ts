@@ -79,6 +79,8 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
   isLegacyFormat: vi.fn(() => false),
 }))
 
+vi.mock('@/lib/whatsapp/config-resolver', () => import('@/lib/whatsapp/config-resolver.test-double'))
+
 import { POST } from './route'
 import { __resetRateLimitForTests } from '@/lib/rate-limit'
 

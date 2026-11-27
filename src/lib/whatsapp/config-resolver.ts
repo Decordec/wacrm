@@ -124,6 +124,52 @@ export async function getWhatsAppConfigForConversation(
   return getWhatsAppConfigOrDefault(db, accountId, configId, select);
 }
 
+/**
+ * The number that owns a WhatsApp Business Account (templates live on
+ * the WABA, not the number). Falls back to the default number when the
+ * WABA is unknown — e.g. a template saved before migration 062.
+ */
+export async function getWhatsAppConfigForWaba(
+  db: Db,
+  accountId: string,
+  wabaId: string | null | undefined,
+  select = '*'
+): Promise<WhatsAppConfigRow | null> {
+  if (wabaId) {
+    const { data, error } = await db
+      .from('whatsapp_config')
+      .select(select)
+      .eq('account_id', accountId)
+      .eq('waba_id', wabaId)
+      .order('created_at', { ascending: true })
+      .limit(1);
+    if (!error) {
+      const row = (data as unknown as WhatsAppConfigRow[] | null)?.[0];
+      if (row) return row;
+    }
+  }
+  return getDefaultWhatsAppConfig(db, accountId, select);
+}
+
+/** Every number on the account, default first. */
+export async function listWhatsAppConfigs(
+  db: Db,
+  accountId: string,
+  select = '*'
+): Promise<WhatsAppConfigRow[]> {
+  const { data, error } = await db
+    .from('whatsapp_config')
+    .select(select)
+    .eq('account_id', accountId)
+    .order('is_default', { ascending: false })
+    .order('created_at', { ascending: true });
+  if (error) {
+    console.error('[config-resolver] config list failed:', error.message);
+    return [];
+  }
+  return (data as unknown as WhatsAppConfigRow[] | null) ?? [];
+}
+
 /** How many numbers the account has connected. */
 export async function countWhatsAppConfigs(db: Db, accountId: string): Promise<number> {
   const { count } = await db

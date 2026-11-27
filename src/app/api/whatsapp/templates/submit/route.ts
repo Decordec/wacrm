@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getDefaultWhatsAppConfig } from '@/lib/whatsapp/config-resolver'
+import { getWhatsAppConfigOrDefault } from '@/lib/whatsapp/config-resolver'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   ForbiddenError,
@@ -23,6 +23,7 @@ const t = getT('Api')
 
 function buildTemplateRow(
   accountId: string,
+  wabaId: string | null,
   payload: TemplatePayload,
   extras: {
     status: 'DRAFT' | string
@@ -35,6 +36,8 @@ function buildTemplateRow(
     // of migration 017. Without this an INSERT throws on the
     // not-null constraint.
     account_id: accountId,
+    // WABA the template lives in (migration 062).
+    waba_id: wabaId,
     name: payload.name,
     category: payload.category,
     language: payload.language,
@@ -69,14 +72,16 @@ function isUnsubmittedDraft(existing: ExistingTemplate) {
 async function findExistingTemplate(
   supabase: SupabaseClient,
   accountId: string,
+  wabaId: string | null,
   payload: TemplatePayload,
 ) {
-  return supabase
+  const q = supabase
     .from('message_templates')
     .select('id, status, meta_template_id')
     .eq('account_id', accountId)
     .eq('name', payload.name)
     .eq('language', payload.language)
+  return (wabaId ? q.eq('waba_id', wabaId) : q.is('waba_id', null))
     .maybeSingle<ExistingTemplate>()
 }
 
@@ -157,9 +162,22 @@ export async function POST(request: Request) {
       )
     }
 
+    const dryRun =
+      process.env.WHATSAPP_TEMPLATES_DRY_RUN === 'true' ||
+      process.env.WHATSAPP_TEMPLATES_DRY_RUN === '1'
+
+    // The number whose WABA receives the template (migration 062).
+    const config = await getWhatsAppConfigOrDefault(
+      supabase,
+      accountId,
+      payload.whatsapp_config_id ?? null,
+    )
+    const wabaId: string | null = config?.waba_id ?? null
+
     const { data: existing, error: existingErr } = await findExistingTemplate(
       supabase,
       accountId,
+      wabaId,
       payload,
     )
     if (existingErr) {
@@ -178,10 +196,6 @@ export async function POST(request: Request) {
     }
     const existingDraftId = existing?.id ?? null
 
-    const dryRun =
-      process.env.WHATSAPP_TEMPLATES_DRY_RUN === 'true' ||
-      process.env.WHATSAPP_TEMPLATES_DRY_RUN === '1'
-
     let metaTemplateId: string
     let metaStatus: string
 
@@ -189,7 +203,6 @@ export async function POST(request: Request) {
       metaTemplateId = `dry-run-${crypto.randomUUID()}`
       metaStatus = 'PENDING'
     } else {
-      const config = await getDefaultWhatsAppConfig(supabase, accountId)
       if (!config) {
         return NextResponse.json(
           {
@@ -242,7 +255,7 @@ export async function POST(request: Request) {
           supabase,
           existingDraftId,
           userId,
-          buildTemplateRow(accountId, payload, {
+          buildTemplateRow(accountId, wabaId, payload, {
             status: 'DRAFT',
             metaTemplateId: null,
             submissionError: message,
@@ -264,7 +277,7 @@ export async function POST(request: Request) {
       supabase,
       existingDraftId,
       userId,
-      buildTemplateRow(accountId, payload, {
+      buildTemplateRow(accountId, wabaId, payload, {
         status: normalizeStatus(metaStatus),
         metaTemplateId,
         submissionError: null,

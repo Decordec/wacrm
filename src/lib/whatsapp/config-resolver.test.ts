@@ -7,6 +7,8 @@ import {
   getWhatsAppConfigById,
   getWhatsAppConfigForConversation,
   getWhatsAppConfigOrDefault,
+  getWhatsAppConfigForWaba,
+  listWhatsAppConfigs,
 } from './config-resolver';
 
 type Row = Record<string, unknown>;
@@ -138,5 +140,35 @@ describe('config-resolver', () => {
   it('counts the account’s numbers', async () => {
     const db = fakeDb({ whatsapp_config: [decordec, rmc, otherAccount] });
     expect(await countWhatsAppConfigs(db, 'acct-1')).toBe(2);
+  });
+});
+
+describe('per-WABA lookups (migration 062)', () => {
+  const configs = [
+    { id: 'dec', account_id: 'a1', waba_id: 'W-DEC', is_default: true, created_at: '2026-01-01' },
+    { id: 'rmc', account_id: 'a1', waba_id: 'W-RMC', is_default: false, created_at: '2026-01-02' },
+    { id: 'saze', account_id: 'a1', waba_id: 'W-SAZE', is_default: false, created_at: '2026-01-03' },
+    { id: 'other', account_id: 'a2', waba_id: 'W-RMC', is_default: true, created_at: '2026-01-01' },
+  ];
+
+  it('finds the number that owns a WABA within the account', async () => {
+    const db = fakeDb({ whatsapp_config: configs });
+    expect((await getWhatsAppConfigForWaba(db, 'a1', 'W-RMC'))?.id).toBe('rmc');
+  });
+
+  it('falls back to the default number for an unknown or missing WABA', async () => {
+    const db = fakeDb({ whatsapp_config: configs });
+    expect((await getWhatsAppConfigForWaba(db, 'a1', 'W-NOPE'))?.id).toBe('dec');
+    expect((await getWhatsAppConfigForWaba(db, 'a1', null))?.id).toBe('dec');
+  });
+
+  it('never resolves another account\'s WABA', async () => {
+    const db = fakeDb({ whatsapp_config: configs });
+    expect((await getWhatsAppConfigForWaba(db, 'a2', 'W-DEC'))?.id).toBe('other');
+  });
+
+  it('lists every number of the account, default first', async () => {
+    const db = fakeDb({ whatsapp_config: configs });
+    expect((await listWhatsAppConfigs(db, 'a1')).map((c) => c.id)).toEqual(['dec', 'rmc', 'saze']);
   });
 });

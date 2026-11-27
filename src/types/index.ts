@@ -360,6 +360,8 @@ export interface TemplateSampleValues {
 export interface MessageTemplate {
   id: string;
   user_id: string;
+  /** WhatsApp Business Account the template lives in (migration 062). */
+  waba_id?: string | null;
   name: string;
   category: 'Marketing' | 'Utility' | 'Authentication';
   language?: string;

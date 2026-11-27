@@ -1,5 +1,6 @@
 'use client';
 
+import { NumberPicker } from '@/components/whatsapp/number-picker';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -149,6 +150,10 @@ export function TemplateManager() {
   // submit handler from POST /submit to PATCH /[id] and changes the
   // dialog title + CTA. Set to the template id to pre-fill from a row.
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Number whose WABA a new template is created in (migration 062).
+  const [templateNumberId, setTemplateNumberId] = useState<string | null>(null);
+  // waba_id -> brand label, to show which brand each template belongs to.
+  const [wabaLabels, setWabaLabels] = useState<Record<string, string>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const editingTemplate = templates.find((template) => template.id === editingId);
   const categoryLocked =
@@ -201,6 +206,24 @@ export function TemplateManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user?.id, accountId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await createClient()
+        .from('whatsapp_config')
+        .select('waba_id, label, phone_number_id');
+      if (cancelled || !data || data.length < 2) return;
+      const map: Record<string, string> = {};
+      for (const row of data as { waba_id: string | null; label: string | null; phone_number_id: string }[]) {
+        if (row.waba_id && !map[row.waba_id]) map[row.waba_id] = row.label || row.phone_number_id;
+      }
+      setWabaLabels(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function fetchTemplates(acctId: string) {
     try {
       setLoading(true);
@@ -238,6 +261,7 @@ export function TemplateManager() {
       buttons: form.buttons.length > 0 ? form.buttons : undefined,
       sample_values:
         Object.keys(sample_values).length > 0 ? sample_values : undefined,
+      ...(templateNumberId ? { whatsapp_config_id: templateNumberId } : {}),
     };
   }
 
@@ -571,6 +595,11 @@ export function TemplateManager() {
                       <Badge className={`text-xs border ${status.classes}`}>
                         {status.label}
                       </Badge>
+                      {template.waba_id && wabaLabels[template.waba_id] && (
+                        <Badge variant="outline" className="text-xs">
+                          {wabaLabels[template.waba_id]}
+                        </Badge>
+                      )}
                       {template.language && (
                         <span className="text-xs text-muted-foreground uppercase">
                           {template.language}
@@ -696,6 +725,9 @@ export function TemplateManager() {
           )}
 
           <div className="space-y-4 py-2">
+            {editingId === null && (
+              <NumberPicker value={templateNumberId} onChange={setTemplateNumberId} />
+            )}
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('templateName')}</Label>
               <Input

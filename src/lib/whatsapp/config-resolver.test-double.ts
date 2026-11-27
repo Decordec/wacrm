@@ -52,6 +52,20 @@ export async function getWhatsAppConfigForConversation(
   return singleConfig(db, accountId, select);
 }
 
+export async function getWhatsAppConfigForWaba(
+  db: Db,
+  accountId: string,
+  _wabaId: string | null | undefined,
+  select = '*'
+) {
+  return singleConfig(db, accountId, select);
+}
+
+export async function listWhatsAppConfigs(db: Db, accountId: string, select = '*') {
+  const row = await singleConfig(db, accountId, select);
+  return row ? [row] : [];
+}
+
 export async function countWhatsAppConfigs(db: Db, accountId: string) {
   return (await singleConfig(db, accountId, 'id')) ? 1 : 0;
 }

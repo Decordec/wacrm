@@ -146,7 +146,15 @@ export default function NewBroadcastPage() {
       </div>
 
       {/* Which number sends it — hidden for single-number accounts */}
-      <NumberPicker value={whatsappConfigId} onChange={setWhatsappConfigId} />
+      <NumberPicker
+        value={whatsappConfigId}
+        onChange={(id) => {
+          // Templates are per WABA: a template picked for another
+          // number may not exist on this one.
+          if (id !== whatsappConfigId) setTemplate(null);
+          setWhatsappConfigId(id);
+        }}
+      />
 
       {/* Step Indicator */}
       <div className="flex items-center justify-between">
@@ -201,6 +209,7 @@ export default function NewBroadcastPage() {
             <Step1ChooseTemplate
               selectedTemplate={template}
               onSelect={setTemplate}
+              whatsappConfigId={whatsappConfigId}
               onNext={() => setCurrentStep(1)}
               onBack={() => router.push('/broadcasts')}
             />

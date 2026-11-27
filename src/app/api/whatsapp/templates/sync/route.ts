@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getDefaultWhatsAppConfig } from '@/lib/whatsapp/config-resolver'
+import { listWhatsAppConfigs } from '@/lib/whatsapp/config-resolver'
 import {
   ForbiddenError,
   UnauthorizedError,
@@ -143,161 +143,175 @@ export async function POST() {
     const limit = checkRateLimit(`whatsapp-admin:${userId}`, RATE_LIMITS.whatsappAdmin)
     if (!limit.success) return rateLimitResponse(limit)
 
-    const config = await getDefaultWhatsAppConfig(supabase, accountId)
-
-    if (!config) {
+    // Every connected number's WABA (migration 062). Numbers that share
+    // a WABA share its templates, so each WABA is fetched once.
+    const configs = await listWhatsAppConfigs(supabase, accountId)
+    if (configs.length === 0) {
       return NextResponse.json(
-        {
-          error:
-            t('common.whatsappNotConfiguredConnect'),
-        },
+        { error: t('common.whatsappNotConfiguredConnect') },
         { status: 400 },
       )
     }
-
-    if (!config.waba_id) {
+    const wabas = new Map<string, string>() // waba_id -> encrypted token
+    for (const c of configs) {
+      if (c.waba_id && !wabas.has(c.waba_id)) wabas.set(c.waba_id, c.access_token)
+    }
+    if (wabas.size === 0) {
       return NextResponse.json(
-        {
-          error:
-            t('common.wabaIdMissing'),
-        },
+        { error: t('common.wabaIdMissing') },
         { status: 400 },
       )
-    }
-
-    const accessToken = decrypt(config.access_token)
-
-    const metaTemplates: MetaTemplate[] = []
-    let nextUrl:
-      | string
-      | null = `${META_API_BASE}/${config.waba_id}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
-    const PAGE_CAP = 20
-    let pageCount = 0
-
-    while (nextUrl && pageCount < PAGE_CAP) {
-      pageCount++
-      const metaRes: Response = await fetch(nextUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      })
-
-      if (!metaRes.ok) {
-        let metaErr = t('templates.metaApiStatus', { status: metaRes.status })
-        try {
-          const body = await metaRes.json()
-          if (body?.error?.message) metaErr = body.error.message
-        } catch {
-          // response wasn't JSON — keep the fallback
-        }
-        return NextResponse.json({ error: metaErr }, { status: 502 })
-      }
-
-      const metaBody: {
-        data?: MetaTemplate[]
-        paging?: { next?: string }
-      } = await metaRes.json()
-      if (metaBody.data) metaTemplates.push(...metaBody.data)
-      nextUrl = metaBody.paging?.next ?? null
     }
 
     let inserted = 0
     let updated = 0
+    let total = 0
+    let truncated = false
     const errors: { name: string; language: string; message: string }[] = []
 
-    for (const t of metaTemplates) {
-      const body = (t.components ?? []).find((c) => c.type === 'BODY')
-      const header = (t.components ?? []).find((c) => c.type === 'HEADER')
-      const footer = (t.components ?? []).find((c) => c.type === 'FOOTER')
-      const buttons = (t.components ?? []).find((c) => c.type === 'BUTTONS')
+    for (const [wabaId, encryptedToken] of wabas) {
+      const accessToken = decrypt(encryptedToken)
+      const metaTemplates: MetaTemplate[] = []
+      let nextUrl:
+        | string
+        | null = `${META_API_BASE}/${wabaId}/message_templates?limit=100&fields=id,name,language,status,category,components,quality_score`
+      const PAGE_CAP = 20
+      let pageCount = 0
 
-      const parsedButtons = parseButtons(buttons?.buttons)
-      const sampleValues = extractSampleValues(body, header)
-
-      const headerFormat = header?.format?.toUpperCase()
-      const headerType =
-        headerFormat === 'TEXT' ||
-        headerFormat === 'IMAGE' ||
-        headerFormat === 'VIDEO' ||
-        headerFormat === 'DOCUMENT'
-          ? headerFormat.toLowerCase()
-          : null
-
-      const row = {
-        // Account tenancy. account_id is NOT NULL on message_templates
-        // post-017, so an INSERT without it errors.
-        account_id: accountId,
-        name: t.name,
-        category: normalizeCategory(t.category),
-        language: t.language,
-        header_type: headerType,
-        header_content: header?.text ?? null,
-        header_handle: header?.example?.header_handle?.[0] ?? null,
-        body_text: body?.text ?? '',
-        footer_text: footer?.text ?? null,
-        buttons: parsedButtons.length ? parsedButtons : null,
-        sample_values: sampleValues,
-        status: normalizeStatus(t.status),
-        meta_template_id: t.id,
-        quality_score: normalizeQualityScore(t.quality_score),
-        updated_at: new Date().toISOString(),
-      }
-
-      const { data: matches, error: lookupErr } = await supabase
-        .from('message_templates')
-        .select('id')
-        .eq('account_id', accountId)
-        .eq('name', t.name)
-        .eq('language', t.language)
-        .order('updated_at', { ascending: false })
-        .order('id')
-        .limit(1)
-      const existing = matches?.[0]
-
-      if (lookupErr) {
-        errors.push({
-          name: t.name,
-          language: t.language,
-          message: lookupErr.message,
+      while (nextUrl && pageCount < PAGE_CAP) {
+        pageCount++
+        const metaRes: Response = await fetch(nextUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
         })
-        continue
-      }
 
-      if (existing?.id) {
-        const { error: updErr } = await supabase
-          .from('message_templates')
-          .update(row)
-          .eq('id', existing.id)
-        if (updErr) {
-          errors.push({
-            name: t.name,
-            language: t.language,
-            message: updErr.message,
-          })
-        } else {
-          updated++
+        if (!metaRes.ok) {
+          let metaErr = t('templates.metaApiStatus', { status: metaRes.status })
+          try {
+            const body = await metaRes.json()
+            if (body?.error?.message) metaErr = body.error.message
+          } catch {
+            // response wasn't JSON — keep the fallback
+          }
+          // One unreachable WABA must not hide the others' templates
+          // when several numbers are connected.
+          if (wabas.size === 1) {
+            return NextResponse.json({ error: metaErr }, { status: 502 })
+          }
+          errors.push({ name: `WABA ${wabaId}`, language: '', message: metaErr })
+          nextUrl = null
+          break
         }
-      } else {
-        const { error: insErr } = await supabase
+
+        const metaBody: {
+          data?: MetaTemplate[]
+          paging?: { next?: string }
+        } = await metaRes.json()
+        if (metaBody.data) metaTemplates.push(...metaBody.data)
+        nextUrl = metaBody.paging?.next ?? null
+      }
+      if (pageCount >= PAGE_CAP && nextUrl !== null) truncated = true
+      total += metaTemplates.length
+
+      for (const t of metaTemplates) {
+        const body = (t.components ?? []).find((c) => c.type === 'BODY')
+        const header = (t.components ?? []).find((c) => c.type === 'HEADER')
+        const footer = (t.components ?? []).find((c) => c.type === 'FOOTER')
+        const buttons = (t.components ?? []).find((c) => c.type === 'BUTTONS')
+
+        const parsedButtons = parseButtons(buttons?.buttons)
+        const sampleValues = extractSampleValues(body, header)
+
+        const headerFormat = header?.format?.toUpperCase()
+        const headerType =
+          headerFormat === 'TEXT' ||
+          headerFormat === 'IMAGE' ||
+          headerFormat === 'VIDEO' ||
+          headerFormat === 'DOCUMENT'
+            ? headerFormat.toLowerCase()
+            : null
+
+        const row = {
+          // Account tenancy. account_id is NOT NULL on message_templates
+          // post-017, so an INSERT without it errors.
+          account_id: accountId,
+          waba_id: wabaId,
+          name: t.name,
+          category: normalizeCategory(t.category),
+          language: t.language,
+          header_type: headerType,
+          header_content: header?.text ?? null,
+          header_handle: header?.example?.header_handle?.[0] ?? null,
+          body_text: body?.text ?? '',
+          footer_text: footer?.text ?? null,
+          buttons: parsedButtons.length ? parsedButtons : null,
+          sample_values: sampleValues,
+          status: normalizeStatus(t.status),
+          meta_template_id: t.id,
+          quality_score: normalizeQualityScore(t.quality_score),
+          updated_at: new Date().toISOString(),
+        }
+
+        // Same WABA first; otherwise adopt a row saved before 062
+        // (waba_id NULL) with the same name/language.
+        const { data: matches, error: lookupErr } = await supabase
           .from('message_templates')
-          .insert({ ...row, user_id: userId })
-        if (insErr) {
+          .select('id, waba_id')
+          .eq('account_id', accountId)
+          .eq('name', t.name)
+          .eq('language', t.language)
+          .order('updated_at', { ascending: false })
+          .order('id')
+        const existing =
+          matches?.find((m) => m.waba_id === wabaId) ??
+          matches?.find((m) => m.waba_id == null)
+
+        if (lookupErr) {
           errors.push({
             name: t.name,
             language: t.language,
-            message: insErr.message,
+            message: lookupErr.message,
           })
+          continue
+        }
+
+        if (existing?.id) {
+          const { error: updErr } = await supabase
+            .from('message_templates')
+            .update(row)
+            .eq('id', existing.id)
+          if (updErr) {
+            errors.push({
+              name: t.name,
+              language: t.language,
+              message: updErr.message,
+            })
+          } else {
+            updated++
+          }
         } else {
-          inserted++
+          const { error: insErr } = await supabase
+            .from('message_templates')
+            .insert({ ...row, user_id: userId })
+          if (insErr) {
+            errors.push({
+              name: t.name,
+              language: t.language,
+              message: insErr.message,
+            })
+          } else {
+            inserted++
+          }
         }
       }
     }
 
     return NextResponse.json({
       success: errors.length === 0,
-      total: metaTemplates.length,
+      total,
       inserted,
       updated,
       errors,
-      truncated: pageCount >= PAGE_CAP && nextUrl !== null,
+      truncated,
     })
   } catch (error) {
     // Auth failures map to 401/403 rather than being folded into the

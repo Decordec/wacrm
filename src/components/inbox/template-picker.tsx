@@ -26,6 +26,10 @@ import {
   extractVariableIndices,
 } from "@/lib/whatsapp/template-validators";
 import { useTranslations } from "next-intl";
+import {
+  resolveNumberWaba,
+  wabaTemplateFilter,
+} from "@/lib/whatsapp/template-scope";
 
 export interface TemplateSendValues {
   body: string[];
@@ -37,6 +41,11 @@ interface TemplatePickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (template: MessageTemplate, values: TemplateSendValues) => void;
+  /**
+   * Number the template will be sent from. Only templates in that
+   * number's WABA are offered (migration 062). Omitted → default number.
+   */
+  whatsappConfigId?: string | null;
 }
 
 function renderBodyPreview(body: string, params: string[]): string {
@@ -84,6 +93,7 @@ export function TemplatePicker({
   open,
   onOpenChange,
   onSelect,
+  whatsappConfigId,
 }: TemplatePickerProps) {
   const t = useTranslations("Inbox.templatePicker");
 
@@ -117,11 +127,15 @@ export function TemplatePicker({
       // user_id. Templates are account-owned, so filtering on the caller's
       // user_id hid templates that a teammate created — leaving them unable
       // to send approved templates in a shared account.
-      const { data, error } = await supabase
+      const wabaId = await resolveNumberWaba(supabase, whatsappConfigId);
+      let query = supabase
         .from("message_templates")
         .select("*")
-        .eq("status", "APPROVED")
-        .order("created_at", { ascending: false });
+        .eq("status", "APPROVED");
+      if (wabaId) query = query.or(wabaTemplateFilter(wabaId));
+      const { data, error } = await query.order("created_at", {
+        ascending: false,
+      });
 
       if (cancelled) return;
       if (error) {
@@ -136,7 +150,7 @@ export function TemplatePicker({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, whatsappConfigId]);
 
   function resetSelection() {
     setSelected(null);

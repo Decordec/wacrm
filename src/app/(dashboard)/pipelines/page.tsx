@@ -7,6 +7,7 @@ import { PipelineBoard } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
 import { DealForm } from "@/components/pipelines/deal-form";
 import { PipelineAnalytics } from "@/components/pipelines/pipeline-analytics";
+import { AllLeadsTable } from "@/components/pipelines/all-leads-table";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,7 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { GitBranch, Plus, ChevronDown, Settings } from "lucide-react";
+import { GitBranch, Plus, ChevronDown, Settings, LayoutList } from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
@@ -49,6 +50,7 @@ const SPEC_DEFAULT_STAGES = [
 
 export default function PipelinesPage() {
   const t = useTranslations("Pipelines.page");
+  const tAll = useTranslations("AllLeads");
   const tGate = useTranslations("GatedButton");
   const supabase = createClient();
   const canEditSettings = useCan("edit-settings");
@@ -60,6 +62,11 @@ export default function PipelinesPage() {
   const [stages, setStages] = useState<PipelineStage[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loading, setLoading] = useState(true);
+  // "all" = every lead from every pipeline in one table; "board" = the
+  // selected pipeline's kanban. With several brands (Decordec, RMC,
+  // Saze Home) the combined view is the landing page.
+  const [view, setView] = useState<"all" | "board">("board");
+  const viewChosen = useRef(false);
 
   // Dialog / sheet state
   const [newPipelineOpen, setNewPipelineOpen] = useState(false);
@@ -158,6 +165,7 @@ export default function PipelinesPage() {
 
       if (cancelled) return;
       setPipelines(list);
+      if (!viewChosen.current && list.length > 1) setView("all");
       if (list.length > 0) {
         setSelectedPipelineId((prev) =>
           prev && list.some((p) => p.id === prev) ? prev : list[0].id,
@@ -300,6 +308,14 @@ export default function PipelinesPage() {
 
   const selectedPipeline = pipelines.find((p) => p.id === selectedPipelineId);
 
+  // From the combined table: jump to the lead's own pipeline and open it.
+  const openDealFromAll = (deal: Deal) => {
+    viewChosen.current = true;
+    setSelectedPipelineId(deal.pipeline_id);
+    setView("board");
+    handleEditDeal(deal);
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -328,7 +344,9 @@ export default function PipelinesPage() {
             >
               <GitBranch className="h-4 w-4 text-primary" />
               <span className="font-semibold">
-                {selectedPipeline?.name ?? t("selectPipeline")}
+                {view === "all"
+                  ? tAll("title")
+                  : (selectedPipeline?.name ?? t("selectPipeline"))}
               </span>
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
             </DropdownMenuTrigger>
@@ -341,12 +359,31 @@ export default function PipelinesPage() {
                   {t("noPipelinesYet")}
                 </DropdownMenuItem>
               )}
+              {pipelines.length > 0 && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      viewChosen.current = true;
+                      setView("all");
+                    }}
+                    className={view === "all" ? "text-primary" : "text-popover-foreground"}
+                  >
+                    <LayoutList className="mr-2 h-3.5 w-3.5" />
+                    {tAll("title")}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="bg-border" />
+                </>
+              )}
               {pipelines.map((p) => (
                 <DropdownMenuItem
                   key={p.id}
-                  onClick={() => setSelectedPipelineId(p.id)}
+                  onClick={() => {
+                    viewChosen.current = true;
+                    setView("board");
+                    setSelectedPipelineId(p.id);
+                  }}
                   className={
-                    p.id === selectedPipelineId
+                    view === "board" && p.id === selectedPipelineId
                       ? "text-primary"
                       : "text-popover-foreground"
                   }
@@ -356,7 +393,7 @@ export default function PipelinesPage() {
                 </DropdownMenuItem>
               ))}
               <DropdownMenuSeparator className="bg-border" />
-              {selectedPipeline && (
+              {selectedPipeline && view === "board" && (
                 <DropdownMenuItem
                   onClick={() => setSettingsOpen(true)}
                   className="text-popover-foreground"
@@ -383,7 +420,7 @@ export default function PipelinesPage() {
           <GatedButton
             canAct={canCreateDeals}
             gateReason={tGate("reasons.createDeals")}
-            disabled={!selectedPipelineId || stages.length === 0}
+            disabled={view === "all" || !selectedPipelineId || stages.length === 0}
             onClick={() => handleAddDeal()}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
@@ -413,6 +450,8 @@ export default function PipelinesPage() {
             {t("createPipeline")}
           </GatedButton>
         </div>
+      ) : view === "all" ? (
+        <AllLeadsTable pipelines={pipelines} onOpenDeal={openDealFromAll} />
       ) : (
         <>
           <PipelineAnalytics stages={stages} deals={deals} />

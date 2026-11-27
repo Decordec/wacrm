@@ -49,6 +49,11 @@ export interface TemplatePayload {
   footer_text?: string;
   buttons?: TemplateButton[];
   sample_values?: TemplateSampleValues;
+  /**
+   * Which connected number's WABA the template is created in (migration
+   * 062). Omitted → the account's default number.
+   */
+  whatsapp_config_id?: string | null;
 }
 
 export function validateTemplateName(name: string): void {

@@ -3011,5 +3011,29 @@
     "numberFilter": "Number",
     "fromNumber": "Send from",
     "fromNumberHint": "The WhatsApp number this broadcast goes out from."
+  },
+  "AllLeads": {
+    "title": "All leads",
+    "openCount": "{count} open",
+    "searchPlaceholder": "Search lead, name or phone",
+    "pipeline": "Pipeline",
+    "allPipelines": "All pipelines",
+    "status": "Status",
+    "statuses": {
+      "open": "Open",
+      "won": "Won",
+      "lost": "Lost",
+      "all": "All"
+    },
+    "showing": "{count} leads",
+    "lead": "Lead",
+    "stage": "Stage",
+    "value": "Value",
+    "followUp": "Follow-up",
+    "owner": "Owner",
+    "loading": "Loading leads…",
+    "empty": "No leads match these filters.",
+    "overdue": "overdue",
+    "today": "today"
   }
 }

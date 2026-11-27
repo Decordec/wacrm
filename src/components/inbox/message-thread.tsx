@@ -1312,6 +1312,7 @@ export function MessageThread({
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+        whatsappConfigId={conversation.whatsapp_config_id ?? null}
       />
 
       {/* Full-size viewer for the thread's images/videos. Renders nothing

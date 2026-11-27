@@ -345,6 +345,8 @@ async function createStubForUnknownTemplate(p: StubParams): Promise<void> {
     account_id: config.account_id,
     user_id: config.user_id,
     meta_template_id: metaTemplateId,
+    // Templates are catalogued per WABA (migration 062).
+    waba_id: wabaId,
     name,
     language: p.language || DEFAULT_TEMPLATE_LANGUAGE,
     body_text: STUB_BODY_TEXT,
